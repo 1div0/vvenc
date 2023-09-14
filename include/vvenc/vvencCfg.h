@@ -114,6 +114,7 @@ typedef enum
  VVENC_MEDIUM    = 2,
  VVENC_SLOW      = 3,
  VVENC_SLOWER    = 4,
+ VVENC_MEDIUM_LOWDECNRG = 130,       // medium based low decoding energy
  VVENC_FIRSTPASS = 254,
  VVENC_TOOLTEST  = 255,
 }vvencPresetMode;
@@ -498,8 +499,8 @@ typedef struct vvenc_config
   int                 m_cfgUnused4[ 7 ];                                                 // TODO: remove unused memory from configuration
   int                 m_cfgUnused5[ 7 ];
   int                 m_cfgUnused6;
-  int                 m_cfgUnused7;
-  int                 m_cfgUnused8;
+  int                 m_maxPicWidth;
+  int                 m_maxPicHeight;
 
   bool                m_useSameChromaQPTables;
   vvencChromaQpMappingTableParams m_chromaQpMappingTableParams;
@@ -848,7 +849,7 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *cfg );
 #define VVENC_OPT_TICKSPERSEC          "tickspersec"          // m_TicksPerSecond
 #define VVENC_OPT_INPUTBITDEPTH        "inputbitdepth"        // m_inputBitDepth
 #define VVENC_OPT_FRAMES               "framestobeencoded"    // m_framesToBeEncoded
-#define VVENC_OPT_PRESET               "preset"               // set preset like "faster,fast,medium,slow,slower
+#define VVENC_OPT_PRESET               "preset"               // set preset like "faster,fast,medium,slow,slower,medium_lowDecEnergy
 #define VVENC_OPT_THREADS              "threads"              // m_numThreads
 #define VVENC_OPT_BITRATE              "bitrate"              // m_RCTargetBitrate
 #define VVENC_OPT_QP                   "qp"                   // m_QP
