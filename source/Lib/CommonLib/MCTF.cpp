@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2023, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2024, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -936,6 +936,34 @@ void MCTF::filter( const std::deque<Picture*>& picFifo, int filterIdx )
           fltrBuf.create( m_encCfg->m_internChromaFormat, m_area, 0, m_padding );
           bilateralFilter( origBuf, srcFrameInfo, fltrBuf, overallStrength );
         }
+      }
+      if (m_encCfg->m_forceScc <= 0)
+      {
+        bool forceSCC = false;
+        if (pic->gopEntry->m_isStartOfGop)
+        {
+          forceSCC = true;
+          for (int j = 0; j < QPA_MAX_NOISE_LEVELS; j++)
+          {
+            if (pic->m_picShared->m_minNoiseLevels[j] < 255 && pic->m_picShared->m_minNoiseLevels[j])
+            {
+              forceSCC = false;
+              break;
+            }
+          }
+          if (forceSCC)
+          {
+            for (int s = 0; s < mvErr.size(); s++)
+            {
+              if (int(mvErr[s]) == 0)
+              {
+                forceSCC = false;
+                break;
+              }
+            }
+          }
+        }
+        pic->m_picShared->m_forceSCC = forceSCC;
       }
 
       if( !m_encCfg->m_blockImportanceMapping || !pic->useMCTF )

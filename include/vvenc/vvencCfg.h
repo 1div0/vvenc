@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2023, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2024, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -774,7 +774,7 @@ typedef struct vvenc_config
                                                                                          // if negative, the absolute value is interpreted as a 4-bit fixed point multiplier of the target bitrate).
                                                                                          // -24, i.e. -1.1000 binary, means the maxrate would be set to be the 1.5x of the target bitrate.
                                                                                          // for convenience use VVENC_SET_MAXRATE_FACTOR, e.g. VVENC_SET_MAXRATE_FACTOR(1.5), to set the multiplier
-  int                 m_reservedInt;
+  int                 m_forceScc;
   double              m_reservedDouble[9];
 
   // internal state variables

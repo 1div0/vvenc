@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2023, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2024, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -673,22 +673,6 @@ class IStreamToAbbr
     const std::vector<SVPair<A>>* toMap;
 };
 
-template<bool isFloat> class FloatRoundingOffset
-{
-};
-
-template<> class FloatRoundingOffset<true>
-{
-public:
-  static const int offset = 0;
-};
-
-template<> class FloatRoundingOffset<false>
-{
-public:
-  static const int offset = 1;
-};
-
 template<typename T, typename A>
 inline std::istream& operator >> ( std::istream& in, IStreamToAbbr<T,A>& toValue )
 {
@@ -715,7 +699,7 @@ inline std::istream& operator >> ( std::istream& in, IStreamToAbbr<T,A>& toValue
       double value = strtod(str.c_str(), NULL); // convert input string to double
       value *= map.value;                       // scale depending on given abbreviation/scaling factor
       double roundDir    = value < 0 ? -1 : ( value > 0 ? 1 : 0 );
-      double roundOffset = ( FloatRoundingOffset<std::is_floating_point<T>::value>::offset / 2.0 );
+      double roundOffset = std::is_floating_point<T>::value ? 0.0 : 0.5;
       value += roundDir * roundOffset;
       *toValue.dstVal = ( T ) value;
       return in;
