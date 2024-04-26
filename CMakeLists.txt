@@ -10,10 +10,10 @@ if( NOT CMAKE_VERSION VERSION_LESS 3.13.0 )
 endif()
 
 # project name
-project( vvenc VERSION 1.11.0 )
+project( vvenc VERSION 1.11.1 )
 
 # set alternative version numbering for release candidates
-set( PROJECT_VERSION_RC rc1 )
+#set( PROJECT_VERSION_RC rc1 )
 if( PROJECT_VERSION_RC )
     set( PROJECT_VERSION "${PROJECT_VERSION}-${PROJECT_VERSION_RC}" )
 endif()
@@ -35,7 +35,7 @@ set( VVENC_ENABLE_X86_SIMD TRUE                      CACHE BOOL "enable x86 intr
 set( VVENC_ENABLE_ARM_SIMD ${VVENC_ARM_SIMD_DEFAULT} CACHE BOOL "enable ARM intrinsics" )
 
 include( vvencCompilerSupport )
-check_problematic_compiler( VVENC_PROBLEMATIC_COMPILER "MSVC" 19.38 "" )
+check_problematic_compiler( VVENC_PROBLEMATIC_COMPILER "MSVC" 19.38 19.39 )
 
 if( VVENC_PROBLEMATIC_COMPILER )
   set( VVENC_OVERRIDE_COMPILER_CHECK      OFF        CACHE BOOL "Build with known problematic compiler version" )
