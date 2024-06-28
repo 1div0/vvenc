@@ -121,6 +121,11 @@ const std::vector<SVPair<vvencPresetMode>> PresetToEnumMap =
   { "medium",    vvencPresetMode::VVENC_MEDIUM },
   { "slow",      vvencPresetMode::VVENC_SLOW },
   { "slower",    vvencPresetMode::VVENC_SLOWER },
+  { "0",         vvencPresetMode::VVENC_FASTER },
+  { "1",         vvencPresetMode::VVENC_FAST },
+  { "2",         vvencPresetMode::VVENC_MEDIUM },
+  { "3",         vvencPresetMode::VVENC_SLOW },
+  { "4",         vvencPresetMode::VVENC_SLOWER },
   { "medium_lowDecEnergy", vvencPresetMode::VVENC_MEDIUM_LOWDECNRG },
   { "medium_lowdecenergy", vvencPresetMode::VVENC_MEDIUM_LOWDECNRG },
   { "firstpass", vvencPresetMode::VVENC_FIRSTPASS },
@@ -225,12 +230,14 @@ const std::vector<SVPair<vvencDecodingRefreshType>> DecodingRefreshTypeToEnumMap
   { "rpsei",                 VVENC_DRT_RECOVERY_POINT_SEI },
   { "idr2",                  VVENC_DRT_IDR2 }, //deprecated
   { "cra_cre",               VVENC_DRT_CRA_CRE },
+  { "idr_no_radl",           VVENC_DRT_IDR_NO_RADL },
   { "0",                     VVENC_DRT_NONE },
   { "1",                     VVENC_DRT_CRA },
   { "2",                     VVENC_DRT_IDR },
   { "3",                     VVENC_DRT_RECOVERY_POINT_SEI },
   { "4",                     VVENC_DRT_IDR2 },  //deprecated
   { "5",                     VVENC_DRT_CRA_CRE },
+  { "6",                     VVENC_DRT_IDR_NO_RADL },
 };
 
 const std::vector<SVPair<BitDepthAndColorSpace>> BitColorSpaceToIntMap =
@@ -238,6 +245,10 @@ const std::vector<SVPair<BitDepthAndColorSpace>> BitColorSpaceToIntMap =
   { "yuv420",                    YUV420_8 },
   { "yuv420_10",                 YUV420_10 },
   { "yuv420_10_packed",          YUV420_10_PACKED },
+  { "yuv400",                    YUV400_8 },
+  { "gray",                      YUV400_8 },
+  { "yuv400_10",                 YUV400_10 },
+  { "gray10",                    YUV400_10 },
 };
 
 const std::vector<SVPair<int>> SaoToIntMap =
@@ -339,19 +350,19 @@ const std::vector<SVPair<int>> ColorMatrixToIntMap =
   { "12",12 },{ "13",13 },{ "14",14 }
 };
 
-
-const std::vector<SVPair<int>> FlagToIntMap =
+template<typename T>
+const std::vector<SVPair<T>> FlagToIntMap =
 {
-  { "auto",        -1 },
-  { "-1",          -1 },
+  { "auto",        T(-1) },
+  { "-1",          T(-1) },
 
-  { "off",          0 },
-  { "disable",      0 },
-  { "0",            0 },
+  { "off",         T( 0) },
+  { "disable",     T( 0) },
+  { "0",           T( 0) },
 
-  { "on",           1 },
-  { "enable",       1 },
-  { "1",            1 },
+  { "on",          T( 1) },
+  { "enable",      T( 1) },
+  { "1",           T( 1) },
 };
 
 // this is only needed for backward compatibility and will be removed in the next release
@@ -390,12 +401,18 @@ const std::vector<SVPair<int>> BitrateOrScaleAbrevToIntMap =
   { "x",                -16 }   // negative value: multiplier of target bitrate, with a fixed-point accuracy of 4 bit
 };
 
-const std::vector<SVPair<bool>> IfpToValueMap =
+const std::vector<SVPair<int8_t>> MtAbrevToIntMap =
 {
-  { "0",   false },
-  { "off", false },
-  { "1",   1 },
-  { "on",  1 },
+  { "auto",     -1 },
+  { "-1",       -1 },
+
+  { "off",       0 },
+  { "disable",   0 },
+  { "0",         0 },
+
+  { "1",         1 },
+  { "2",         2 },
+  { "3",         3 }
 };
 
 //// ====================================================================================================================
@@ -509,16 +526,18 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
   IStreamToEnum<vvencHDRMode>       toSDRMode                    ( &sdrMode,                          &SdrModeToIntMap       );
   IStreamToEnum<vvencHDRMode>       toHDRMode                    ( &hdrMode,                          &HdrModeToIntMap       );
 
-  IStreamToRefVec<uint32_t>         toNumTiles                   ( { &c->m_numTileCols, &c->m_numTileRows }, true, 'x'       );
+  IStreamToRefVec<int32_t>          toNumTiles                   ( { &c->m_numTileCols, &c->m_numTileRows }, true, 'x'       );
 
   IStreamToFunc<BitDepthAndColorSpace>    toInputFormatBitdepth  ( setInputBitDepthAndColorSpace, this, c, &BitColorSpaceToIntMap, YUV420_8 );
   IStreamToAbbr<int,int>                  toBitrate              ( &c->m_RCTargetBitrate,             &BitrateAbrevToIntMap );
   IStreamToAbbr<int,int>                  toMaxRate              ( &c->m_RCMaxBitrate,                &BitrateOrScaleAbrevToIntMap );
   IStreamToEnum<vvencDecodingRefreshType> toDecRefreshType       ( &c->m_DecodingRefreshType,         &DecodingRefreshTypeToEnumMap );
 
-  IStreamToEnum<int>                toAud                        ( &c->m_AccessUnitDelimiter,         &FlagToIntMap );
-  IStreamToEnum<int>                toVui                        ( &c->m_vuiParametersPresent,        &FlagToIntMap );
+  IStreamToEnum<int>                toAud                        ( &c->m_AccessUnitDelimiter,         &FlagToIntMap<int> );
+  IStreamToEnum<int>                toVui                        ( &c->m_vuiParametersPresent,        &FlagToIntMap<int> );
+  IStreamToEnum<int8_t>             toGOPQPA                     ( &c->m_GOPQPA,                      &FlagToIntMap<int8_t> );
   IStreamToEnum<bool>               toQPA                        ( &c->m_usePerceptQPA,               &QPAToIntMap );
+  
 
   IStreamToRefVec<double>           toLambdaModifier             ( { &c->m_adLambdaModifier[0], &c->m_adLambdaModifier[1], &c->m_adLambdaModifier[2], &c->m_adLambdaModifier[3], &c->m_adLambdaModifier[4], &c->m_adLambdaModifier[5], &c->m_adLambdaModifier[6] }, false );
   IStreamToEnum<vvencCostMode>      toCostMode                   ( &c->m_costMode,                    &CostModeToEnumMap     );
@@ -557,7 +576,10 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
   IStreamToInt8                     toSelectiveRDOQ               ( &c->m_useSelectiveRDOQ );
   IStreamToInt8                     toForceScc                    ( &c->m_forceScc );
   IStreamToInt8                     toIfpLines                    ( &c->m_ifpLines );
-  IStreamToEnum<bool>               toUseIfp                      ( &c->m_ifp, &IfpToValueMap );
+
+  IStreamToEnum<int8_t>             toUseWpp                      ( &c->m_entropyCodingSyncEnabled,    &FlagToIntMap<int8_t> );
+  IStreamToEnum<int8_t>             toUseIfp                      ( &c->m_ifp,                         &FlagToIntMap<int8_t> );
+  IStreamToEnum<int8_t>             toMtProfile                   ( &c->m_mtProfile,                   &MtAbrevToIntMap );
 
   po::Options opts;
   if( m_easyMode )
@@ -580,7 +602,7 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
     opts.addOptions()
     ("input,i",                                         m_inputFileName,                                     "original YUV input file name or '-' for reading from stdin")
     ("size,s",                                          toSourceSize,                                        "specify input resolution (WidthxHeight)")
-    ("format,c",                                        toInputFormatBitdepth,                               "set input format (yuv420, yuv420_10, yuv420_10_packed)")
+    ("format,c",                                        toInputFormatBitdepth,                               "set input format (yuv420, yuv420_10, yuv420_10_packed, yuv400 (gray), yuv400_10 (gray10)")
     ("framerate,r",                                     c->m_FrameRate,                                      "temporal rate (framerate numerator) e.g. 25,30, 30000, 50,60, 60000 ")
     ("framescale",                                      c->m_FrameScale,                                     "temporal scale (framerate denominator) e.g. 1, 1001 ")
     ("fps",                                             toFps,                                               "framerate as int or fraction (num/denom) ")
@@ -646,8 +668,10 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
     ("qp,q",                                            c->m_QP,                                             "quantization parameter, QP (0, 1, .. 63)")
     ("qpa",                                             toQPA,                                               "enable perceptually motivated QP adaptation based on XPSNR model (0: off, 1: on)", true)
     ("threads,t",                                       c->m_numThreads,                                     "number of threads (multithreading; -1: resolution < 720p: 4, < 5K 2880p: 8, >= 5K 2880p: 12 threads)")
+    ("mtprofile",                                       toMtProfile,                                         "enable automatic multi-threading setting (enables tiles, IFP and WPP automatically depending on the number of threads)")
     ("ifp",                                             toUseIfp,                                            "inter-frame parallelization(IFP) (0: off, 1: on, with sync. offset of two CTU lines)")
-    ("refreshtype,-rt",                                 toDecRefreshType,                                    "intra refresh type (idr, cra, cra_cre: CRA, constrained RASL picture encoding)")
+    ("refreshtype,-rt",                                 toDecRefreshType,                                    "intra refresh type (idr, cra, cra_cre: CRA, constrained RASL picture encoding, none, rpsei: Recovery Point SEI,\n"
+                                                                                                             "                    idr_no_radl: IDR, without leading pictures, use for DASH)")
     ("refreshsec,-rs",                                  c->m_IntraPeriodSec,                                 "intra period/refresh in seconds")
     ("intraperiod,-ip",                                 c->m_IntraPeriod,                                    "intra period in frames (0: specify intra period in seconds instead, see -refreshsec)")
     ("tiles",                                           toNumTiles,                                          "number of tile columns and rows")
@@ -658,6 +682,7 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
     opts.setSubSection("Threading, performance");
     opts.addOptions()
     ("Threads,t",                                       c->m_numThreads,                                     "number of threads (multithreading; -1: resolution < 720p: 4, < 5K 2880p: 8, >= 5K 2880p: 12 threads)")
+    ("MTProfile",                                       toMtProfile,                                         "enable automatic multi-threading setting (enables tiles, IFP and WPP automatically depending on the number of threads)")
     ("preset",                                          toPreset,                                            "select preset for specific encoding setting (faster, fast, medium, slow, slower, medium_lowDecEnergy)")
     ("Tiles",                                           toNumTiles,                                          "Set number of tile columns and rows")
     ;
@@ -666,7 +691,8 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
     opts.addOptions()
     ("IntraPeriod,-ip",                                c->m_IntraPeriod,                                     "Intra period in frames (0: use intra period in seconds (refreshsec), else: n*gopsize)")
     ("RefreshSec,-rs",                                 c->m_IntraPeriodSec,                                  "Intra period/refresh in seconds")
-    ("DecodingRefreshType,-dr",                        toDecRefreshType,                                     "intra refresh type (idr, cra, cra_cre: CRA, constrained RASL picture encoding, none, rpsei: Recovery Point SEI)")
+    ("DecodingRefreshType,-dr",                        toDecRefreshType,                                     "intra refresh type (idr, cra, cra_cre: CRA, constrained RASL picture encoding, none, rpsei: Recovery Point SEI,\n"
+                                                                                                             "                    idr_no_radl: IDR, without leading pictures, use for DASH)")
     ("GOPSize,g",                                      c->m_GOPSize,                                         "GOP size of temporal structure (16,32)")
     ("PicReordering",                                  c->m_picReordering,                                   "Allow reordering of pictures (0:off, 1:on), should be disabled for low delay requirements")
     ("POC0IDR",                                        c->m_poc0idr,                                         "start encoding with POC 0 IDR" )
@@ -849,7 +875,8 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
     ("SliceCrQpOffsetIntraOrPeriodic",                  c->m_sliceChromaQpOffsetIntraOrPeriodic[1],          "Chroma Cr QP Offset at slice level for I slice or for periodic inter slices as defined by SliceChromaQPOffsetPeriodicity. Replaces offset in the GOP table.")
 
     ("LumaLevelToDeltaQPMode",                          c->m_lumaLevelToDeltaQPEnabled,                      "Luma based Delta QP 0(default): not used. 1: Based on CTU average")
-    ;
+    ("GOPQPA",                                          toGOPQPA,                                            "Enable GOP QP-cascade (0: off, 1: on, -1: auto - enable when QPA is disabled)")
+    ; 
 
     opts.setSubSection("Misc. options");
     opts.addOptions()
@@ -861,7 +888,7 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
     ("MSBExtendedBitDepth",                             c->m_MSBExtendedBitDepth[ 0 ],                       "bit depth of luma component after addition of MSBs of value 0 (used for synthesising High Dynamic Range source material). (default:InputBitDepth)")
     ("MSBExtendedBitDepthC",                            c->m_MSBExtendedBitDepth[ 1 ],                       "As per MSBExtendedBitDepth but for chroma component. (default:MSBExtendedBitDepth)")
 
-    ("WaveFrontSynchro",                                c->m_entropyCodingSyncEnabled,                       "Enable entropy coding sync")
+    ("WaveFrontSynchro",                                toUseWpp,                                            "Enable entropy coding sync (WPP)")
     ("EntryPointsPresent",                              c->m_entryPointsPresent,                             "Enable entry points in slice header")
 
     ("TreatAsSubPic",                                   c->m_treatAsSubPic,                                  "Allow generation of subpicture streams. Disable LMCS, AlfTempPred and JCCR")
@@ -1139,6 +1166,13 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
     ;
   }
 
+  {
+    opts.setSubSection("Film grain analysis");
+    opts.addOptions()
+    ("fga",                           c->m_fga,                  "Experimental: Enable film grain analysis and generate FGC SEI message ")
+    ;
+  }
+
   std::ostringstream fullOpts;
   po::doHelp( fullOpts, opts );
 
@@ -1163,6 +1197,9 @@ int parse( int argc, char* argv[], vvenc_config* c, std::ostream& rcOstr )
                                                                                                              "no rate cap; use e.g. 3.5M, 3.5Mbps, 3500k, 3500kbps, 3500000bps, 3500000), use suffix 'x' "
                                                                                                              "to specify as a multiple of target bitrate")
     ("qpa",                                             toQPA,                                               "Enable perceptually motivated QP adaptation, XPSNR based (0:off, 1:on)", true)
+    ("internal-bitdepth",                               c->m_internalBitDepth[0],                            "internal bitdepth (8, 10)")
+    ("refreshtype,-rt",                                 toDecRefreshType,                                    "intra refresh type (idr, cra, cra_cre: CRA, constrained RASL picture encoding)")
+    ("decodedpicturehash,-dph",                         toHashType,                                          "control generation of decode picture hash SEI messages, (0: off, 1: md5, 2: crc, 3: checksum)")
     ;
   }
 
@@ -1343,7 +1380,7 @@ static inline std::string getDynamicRangeStr( int dynamicRange )
   return cT;
 }
 
-static int64_t getFrameCount( std::string fileName, unsigned int width, unsigned int height, int bitdepth, bool packed = false )
+static int64_t getFrameCount( std::string fileName, unsigned int width, unsigned int height, vvencChromaFormat chromaFormat, int bitdepth, bool packed = false )
 {
   int64_t packetCount = 0;
 
@@ -1362,9 +1399,18 @@ static int64_t getFrameCount( std::string fileName, unsigned int width, unsigned
   fhandle.close();
 
   unsigned int uiBitsPerPx = bitdepth == 8 ? 12 : 24;
+  switch ( chromaFormat )
+  {
+    case VVENC_CHROMA_400: uiBitsPerPx = bitdepth == 8 ?  8 : 16; break;
+    case VVENC_CHROMA_420: uiBitsPerPx = bitdepth == 8 ? 12 : 24; break;
+    case VVENC_CHROMA_422: uiBitsPerPx = bitdepth == 8 ? 16 : 32; break;
+    case VVENC_CHROMA_444: uiBitsPerPx = bitdepth == 8 ? 24 : 48; break;
+    default: break;
+  }
+
   size_t frameSize = (width * height * uiBitsPerPx) >> 3;
 
-  if ( packed && bitdepth == 10 )
+  if ( packed && bitdepth == 10 && chromaFormat == VVENC_CHROMA_420 )
   {
     size_t stride = width * 5 / 4;
     size_t lumaSize = stride * height;
@@ -1418,17 +1464,28 @@ virtual std::string getAppConfigAsString( vvenc_config* c, vvencMsgLevel eMsgLev
     if( eMsgLevel >= VVENC_INFO )
     {
       std::string inputFmt;
-      if( c->m_inputBitDepth[ 0 ] == 8 )
-        inputFmt="yuv420p";
-      else if( c->m_inputBitDepth[ 0 ] == 10 )
-        inputFmt= m_packedYUVInput ? "yuv420p10(packed)" : "yuv420p10";       
+      switch ( c->m_internChromaFormat)
+      {
+        case VVENC_CHROMA_400: inputFmt= "yuv400p"; break;
+        case VVENC_CHROMA_422: inputFmt= "yuv422p"; break;
+        case VVENC_CHROMA_444: inputFmt= "yuv444p"; break;
+        case VVENC_CHROMA_420: 
+        default:
+          inputFmt= "yuv420p"; break;
+      }
+      if( c->m_inputBitDepth[ 0 ] == 10 )
+      {
+        inputFmt.append("10");
+        if ( m_packedYUVInput )
+          inputFmt.append("(packed)");
+      }
 
       std::stringstream frameCountStr;
       std::stringstream framesStr;
 
       if( strcmp( m_inputFileName.c_str(), "-" ) )
       {
-        int64_t frameCount = getFrameCount( m_inputFileName, c->m_SourceWidth, c->m_SourceHeight, c->m_inputBitDepth[ 0 ], m_packedYUVInput );
+        int64_t frameCount = getFrameCount( m_inputFileName, c->m_SourceWidth, c->m_SourceHeight, c->m_internChromaFormat, c->m_inputBitDepth[ 0 ], m_packedYUVInput );
         frameCountStr << frameCount << (frameCount > 1 ? " frames" : " frame");
 
         int64_t framesToEncode = (c->m_framesToBeEncoded == 0 || c->m_framesToBeEncoded >= frameCount) ? frameCount : c->m_framesToBeEncoded;

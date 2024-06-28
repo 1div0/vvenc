@@ -65,6 +65,7 @@ VVENC_NAMESPACE_BEGIN
 static bool checkCfgParameter( vvenc_config *cfg );
 static void checkCfgPicPartitioningParameter( vvenc_config *c );
 static void checkCfgInputArrays( vvenc_config *c, int &lastNonZeroCol, int &lastNonZeroRow, bool &cfgIsValid );
+static void initMultithreading( vvenc_config *c );
 static std::string vvenc_cfgString;
 
 static int vvenc_getQpValsSize( int QpVals[] )
@@ -254,6 +255,7 @@ static inline std::string vvenc_getDecodingRefreshTypeStr(  int type, bool poc0i
     case 3: cType = "RecPointSEI"; break;
     case 4: cType = "IDR2 (deprecated)"; break; //deprecated
     case 5: cType = "CRA_CRE (CRA with constrained encoding for RASL pictures)"; break;
+    case 6: cType = "IDR_NO_RADL"; break;
     default: cType = "unknown"; break;
   }
   if( poc0idr ) cType += " with POC 0 IDR";
@@ -490,7 +492,7 @@ VVENC_DECL void vvenc_config_default(vvenc_config *c )
   c->m_pictureTimingSEIEnabled                 = false;
   c->m_decodingUnitInfoSEIEnabled              = false;
 
-  c->m_entropyCodingSyncEnabled                = false;
+  c->m_entropyCodingSyncEnabled                = -1;
   c->m_entryPointsPresent                      = true;
 
   c->m_CTUSize                                 = 128;
@@ -664,15 +666,16 @@ VVENC_DECL void vvenc_config_default(vvenc_config *c )
   c->m_ensureWppBitEqual                       = -1;
   c->m_tileParallelCtuEnc                      = true;
   c->m_ifpLines                                = -1;
-  c->m_ifp                                     = false;
+  c->m_ifp                                     = -1;
+  c->m_mtProfile                               =  0;
 
   c->m_picPartitionFlag                        = false;
   memset( c->m_tileColumnWidth, 0, sizeof(c->m_tileColumnWidth) );
   memset( c->m_tileRowHeight,   0, sizeof(c->m_tileRowHeight) );
   c->m_numExpTileCols                          = 1;
   c->m_numExpTileRows                          = 1;
-  c->m_numTileCols                             = 1;
-  c->m_numTileRows                             = 1;
+  c->m_numTileCols                             = -1;
+  c->m_numTileRows                             = -1;
   c->m_numSlicesInPic                          = 1;
 
   memset( c->m_summaryOutFilename    , '\0', sizeof(c->m_summaryOutFilename) );
@@ -692,7 +695,7 @@ VVENC_DECL void vvenc_config_default(vvenc_config *c )
   c->m_leadFrames                              = 0;
   c->m_trailFrames                             = 0;
 
-  c-> m_deblockLastTLayers                     = 0;
+  c->m_deblockLastTLayers                      = 0;
   c->m_addGOP32refPics                         = false;
   c->m_numRefPics                              = 0;
   c->m_numRefPicsSCC                           = -1;
@@ -700,9 +703,11 @@ VVENC_DECL void vvenc_config_default(vvenc_config *c )
   c->m_FirstPassMode                           = 0;
 
   c->m_forceScc                                = 0;
+  c->m_GOPQPA                                  = -1;
 
-  c->m_reservedFlag                            = false;
-  c->m_reservedInt                             = 0;
+  c->m_fga                                     = false;
+
+  memset( c->m_reservedInt, 0, sizeof(c->m_reservedInt) );
   memset( c->m_reservedDouble, 0, sizeof(c->m_reservedDouble) );
 
   // init default preset
@@ -767,7 +772,7 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
 
   vvenc_confirmParameter( c, c->m_GOPSize < 1 || c->m_GOPSize > VVENC_MAX_GOP,                           "GOP Size must be between 1 and 64" );
   vvenc_confirmParameter( c, c->m_leadFrames < 0 || c->m_leadFrames > VVENC_MAX_GOP,                     "Lead frames exceeds supported range (0 to 64)" );
-  vvenc_confirmParameter( c, c->m_trailFrames < 0 || c->m_trailFrames > VVENC_MCTF_RANGE,                "Trail frames exceeds supported range (0 to 4)" );
+  vvenc_confirmParameter( c, c->m_trailFrames < 0 || c->m_trailFrames > VVENC_MCTF_RANGE,                "Trail frames exceeds supported range (0 to 6)" );
   vvenc_confirmParameter( c, c->m_sliceTypeAdapt < -1 || c->m_sliceTypeAdapt > 2,                        "Slice type adaptation (STA) invalid parameter given, range is (-1 .. 2)" );
   vvenc_confirmParameter( c, c->m_minIntraDist < -1,                                                     "Minimum intra distance cannot be smaller than -1" );
 
@@ -823,12 +828,13 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
     if( c->m_LookAhead > 0 || c->m_RCNumPasses == 1 || std::min( c->m_SourceWidth, c->m_SourceHeight ) < 720 ) 
     {
       c->m_FirstPassMode -= 2;  
-      msg.log( VVENC_NOTICE, "First pass spatial downsampling (FirstPassMode=3/4) cannot be used for single pass encoding and videos with resolution lower than 720p, changing FirstPassMode to %d!\n", c->m_FirstPassMode );
+      //msg.log( VVENC_NOTICE, "First pass spatial downsampling (FirstPassMode=3/4) cannot be used for single pass encoding and videos with resolution lower than 720p, changing FirstPassMode to %d!\n", c->m_FirstPassMode );
     }
   }
 
   const double d = (c->m_RCTargetBitrate != VVENC_RC_OFF ? 1.0 : 2.25) * (3840.0 * 2160.0) / double (c->m_SourceWidth * c->m_SourceHeight);
-  const int rcQP = (c->m_RCInitialQP > 0 ? std::min (vvenc::MAX_QP, c->m_RCInitialQP) : std::max (0, vvenc::MAX_QP_PERCEPT_QPA - (c->m_FirstPassMode > 2 ? 4 : 2) - int (0.5 + sqrt ((d * std::max (0, (c->m_RCTargetBitrate != VVENC_RC_OFF ? c->m_RCTargetBitrate : c->m_RCMaxBitrate))) / 500000.0))));
+  const double f = 38183.5 * sqrt (0.5 + c->m_GOPSize / double (c->m_IntraPeriod < 0 ? INT32_MAX : c->m_GOPSize + std::max (c->m_GOPSize, (c->m_IntraPeriod == 0 && c->m_IntraPeriodSec > 0 ? (c->m_IntraPeriodSec * c->m_FrameRate) / c->m_FrameScale : c->m_IntraPeriod))));
+  const int rcQP = (c->m_RCInitialQP > 0 ? std::min (vvenc::MAX_QP, c->m_RCInitialQP) : std::max (0, vvenc::MAX_QP_PERCEPT_QPA - (c->m_FirstPassMode > 2 ? 4 : 2) - int (0.5 + sqrt ((d * std::max (0, c->m_RCTargetBitrate)) / 500000.0))));
 
   // TODO 2.0: make this an error
   //vvenc_confirmParameter( c, c->m_RCTargetBitrate != VVENC_RC_OFF && c->m_QP != VVENC_AUTO_QP && c->m_QP != VVENC_DEFAULT_QP, "Rate-control and QP based encoding are mutually exclusive!" );
@@ -846,8 +852,17 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
 
   vvenc_confirmParameter( c, c->m_RCTargetBitrate != VVENC_RC_OFF && ( c->m_RCTargetBitrate < 0 || c->m_RCTargetBitrate > 800000000 ),  "TargetBitrate must be between 0 and 800000000" );
   vvenc_confirmParameter( c, c->m_RCTargetBitrate != VVENC_RC_OFF && (int64_t) c->m_RCMaxBitrate * 2 < (int64_t) c->m_RCTargetBitrate * 3, "MaxBitrate must be at least 1.5*TargetBitrate" );
-  vvenc_confirmParameter( c, c->m_RCTargetBitrate == VVENC_RC_OFF && c->m_RCMaxBitrate > 0 && c->m_RCMaxBitrate != INT32_MAX && rcQP + sqrt (c->m_FrameRate / (double) c->m_FrameScale) > c->m_QP + 10.125, "Capped CQF is used and MaxBitrate is too low for specified QP and frame rate/scale" );
   vvenc_confirmParameter( c, c->m_RCTargetBitrate != VVENC_RC_OFF && ( c->m_FirstPassMode < 0 || c->m_FirstPassMode > 4 ), "FirstPassMode must be 0, 1, 2, 3, or 4" );
+
+  if( c->m_RCTargetBitrate == VVENC_RC_OFF && c->m_RCMaxBitrate > 0 )
+  {
+    bool mbrLowErr = ( (double)c->m_RCMaxBitrate < f * sqrt(c->m_FrameRate / (c->m_FrameScale * d)) );
+    vvenc_confirmParameter( c, mbrLowErr, "Capped CQF is used and MaxBitrate is too low for specified Intra period and frame rate/scale" );
+    if( ! mbrLowErr && c->m_RCMaxBitrate * std::max (3.0, d) < 18000.0 * pow (2.0, 15.323 - c->m_QP / 4.516) ) // one fifth of ICIP24 paper function
+    {
+      msg.log( VVENC_WARNING, "Configuration warning: Capped CQF is used and MaxBitrate is very low for specified QP! Increase MaxBitrate to improve visual quality.\n\n" );
+    }
+  }
 
   if ( c->m_internChromaFormat < 0 || c->m_internChromaFormat >= VVENC_NUM_CHROMA_FORMAT )
   {
@@ -929,6 +944,9 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
     c->m_numThreads = getNumThreadsDefault( c );
     c->m_numThreads = std::min( c->m_numThreads, numCores );
   }
+
+  initMultithreading( c );
+
   if( c->m_ensureWppBitEqual < 0 )       c->m_ensureWppBitEqual     = c->m_numThreads ?      1   : 0   ;
   if( c->m_useAMaxBT < 0 )               c->m_useAMaxBT             = c->m_numThreads ?      0   : 1   ;
   if( c->m_cabacInitPresent < 0 )        c->m_cabacInitPresent      = c->m_numThreads ?      0   : 1   ;
@@ -1258,11 +1276,11 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
 
   if( c->m_rprEnabledFlag == -1 )
   {
-    c->m_rprEnabledFlag = c->m_DecodingRefreshType == VVENC_DRT_CRA_CRE ? 2 : 0;
+    c->m_rprEnabledFlag = ( c->m_DecodingRefreshType == VVENC_DRT_CRA_CRE || c->m_DecodingRefreshType == VVENC_DRT_IDR_NO_RADL ) ? 2 : 0;
   }
 
   vvenc_confirmParameter( c, c->m_rprEnabledFlag < -1 || c->m_rprEnabledFlag > 2, "RPR must be either -1, 0, 1 or 2" );
-  vvenc_confirmParameter( c, c->m_rprEnabledFlag == 2 && c->m_DecodingRefreshType != VVENC_DRT_CRA_CRE, "for using RPR=2 constrained rasl encoding, DecodingRefreshType has to be set to VVENC_DRT_CRA_CRE" );
+  vvenc_confirmParameter( c, c->m_rprEnabledFlag == 2 && !( c->m_DecodingRefreshType == VVENC_DRT_CRA_CRE || c->m_DecodingRefreshType == VVENC_DRT_IDR_NO_RADL ), "for using RPR=2 constrained rasl encoding, DecodingRefreshType has to be set to VVENC_DRT_CRA_CRE or VVENC_DRT_IDR_NO_RADL" );
 
   if( c->m_rprEnabledFlag == 2 )
   {
@@ -1270,14 +1288,14 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
     c->m_craAPSreset            = true;
     c->m_rprRASLtoolSwitch      = true;
   }
-  
+
   if( c->m_maxPicWidth > 0 && c->m_maxPicHeight > 0 )
   {
     vvenc_confirmParameter( c, !c->m_rprEnabledFlag || !c->m_resChangeInClvsEnabled, "if max picture size is set, both RPR and resChangeInClvsEnabled have to be enabled" );
   }
 
   if( c->m_IntraPeriod == 0 && c->m_IntraPeriodSec > 0 )
-  {  
+  {
     int idrPeriod = fps * c->m_IntraPeriodSec;
     if( idrPeriod % c->m_GOPSize != 0 )
     {
@@ -1308,7 +1326,7 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
     }
     c->m_IntraPeriod = idrPeriod;
   }
-  
+
   if( c->m_IntraPeriod == 1 && !c->m_poc0idr )
   {
     c->m_poc0idr = true;
@@ -1325,7 +1343,7 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
     }
   }
   vvenc_confirmParameter( c, c->m_IntraPeriod == 0, "intra period must not be equal 0" );
-  
+
   vvenc_confirmParameter( c, !c->m_poc0idr && ( c->m_IntraPeriod == 1 || !c->m_picReordering ), "when POC 0 is not an IDR frame it is only possible for random access, for all intra and low delay encoding POC0IDR must be set!" );
 
   if( c->m_IntraPeriod >= 16 && c->m_GOPSize >= 16 && c->m_IntraPeriod % c->m_GOPSize >= 1 && c->m_IntraPeriod % c->m_GOPSize <= 4 )
@@ -1373,10 +1391,13 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
   }
   vvenc_confirmParameter( c, c->m_minIntraDist > 0 && c->m_sliceTypeAdapt == 0,               "STA: Setting a minimal intra distance only works with slice type adaptation enabled" );
   vvenc_confirmParameter( c, c->m_minIntraDist > c->m_IntraPeriod && c->m_sliceTypeAdapt > 0, "STA: Minimal intra distance can not be larger than intra period" );
+  vvenc_confirmParameter( c, c->m_SegmentMode != VVENC_SEG_OFF && c->m_RCTargetBitrate > 0,   "Segment concatenation not available, when rate control is enabled" );
+  vvenc_confirmParameter( c, c->m_SegmentMode != VVENC_SEG_OFF && !c->m_RCTargetBitrate && c->m_RCMaxBitrate != INT32_MAX, "Segment concatenation not available, when capped CQF is enabled" );
 
   // set number of lead / trail frames in segment mode
-  const int staFrames  = c->m_sliceTypeAdapt                       ? c->m_GOPSize     : 0;
-  const int mctfFrames = c->m_vvencMCTF.MCTF || c->m_usePerceptQPA ? VVENC_MCTF_RANGE : 0;
+  const int keyFrameDist = c->m_IntraPeriod < 1                      ? c->m_GOPSize     : std::min( c->m_GOPSize, c->m_IntraPeriod );
+  const int staFrames    = c->m_sliceTypeAdapt                       ? keyFrameDist     : 0;
+  const int mctfFrames   = c->m_vvencMCTF.MCTF || c->m_usePerceptQPA ? VVENC_MCTF_RANGE : 0;
   switch( c->m_SegmentMode )
   {
     case VVENC_SEG_FIRST:
@@ -1474,6 +1495,10 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
     {
       c->m_sliceChromaQpOffsetPeriodicity = 1;
     }
+  }
+  if ( c->m_GOPQPA < 0 )
+  {
+    c->m_GOPQPA = c->m_usePerceptQPA ? 0 : 1;
   }
 
   if( c->m_treatAsSubPic )
@@ -1678,6 +1703,12 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
     }
   }
 
+  if (c->m_fga)
+  {
+    vvenc_confirmParameter( c, !c->m_vvencMCTF.MCTF, "Film grain analysis cannot be enabled when MCTF is disabled!");
+    vvenc_confirmParameter( c, c->m_IntraPeriod <=1, "Film grain analysis cannot be enabled when intra period is less than two!");
+  }
+
   vvenc_confirmParameter( c, !autoGop && c->m_numRefPics    != 0,                         "NumRefPics cannot be used if explicit GOP configuration is used!" );
   vvenc_confirmParameter( c, !autoGop && c->m_numRefPicsSCC != 0,                         "NumRefPicsSCC cannot be used if explicit GOP configuration is used!" );
   vvenc_confirmParameter( c, !autoGop && c->m_numRefPics    != 0 && c->m_addGOP32refPics, "NumRefPics and AddGOP32refPics options are mutually exclusive!" );
@@ -1879,7 +1910,8 @@ static bool checkCfgParameter( vvenc_config *c )
   vvenc_confirmParameter( c, c->m_log2SaoOffsetScale[0]   > (c->m_internalBitDepth[0  ]<10?0:(c->m_internalBitDepth[0  ]-10)), "SaoLumaOffsetBitShift must be in the range of 0 to InternalBitDepth-10, inclusive");
   vvenc_confirmParameter( c, c->m_log2SaoOffsetScale[1] > (c->m_internalBitDepth[1]<10?0:(c->m_internalBitDepth[1]-10)), "SaoChromaOffsetBitShift must be in the range of 0 to InternalBitDepthC-10, inclusive");
 
-  vvenc_confirmParameter( c, c->m_DecodingRefreshType < 0 || c->m_DecodingRefreshType > 5,                "Decoding refresh type must be comprised between 0 and 5 included" );
+  vvenc_confirmParameter( c, c->m_DecodingRefreshType < 0 || c->m_DecodingRefreshType > 6,                "Decoding refresh type must be comprised between 0 and 6 included" );
+  vvenc_confirmParameter( c, c->m_DecodingRefreshType == 6 && !c->m_poc0idr,                              "Decoding refresh type VVENC_DRT_IDR_NO_RADL without POC0IDR not supported" );
   vvenc_confirmParameter( c,   c->m_picReordering && (c->m_DecodingRefreshType == VVENC_DRT_NONE || c->m_DecodingRefreshType == VVENC_DRT_RECOVERY_POINT_SEI), "Decoding refresh type Recovery Point SEI for non low delay not supported" );
   vvenc_confirmParameter( c, ! c->m_picReordering &&  c->m_DecodingRefreshType != VVENC_DRT_NONE,                                                              "Only decoding refresh type none for low delay supported" );
 
@@ -1900,7 +1932,7 @@ static bool checkCfgParameter( vvenc_config *c )
   vvenc_confirmParameter( c, c->m_vvencMCTF.MCTFUnitSize > 32,                                      "MCTFUnitSize is larger than 32" );
   vvenc_confirmParameter( c, c->m_vvencMCTF.MCTFUnitSize & ( c->m_vvencMCTF.MCTFUnitSize - 1 ),     "MCTFUnitSize is not a power of 2" );
   static const std::string errorSegLessRng = std::string( "When using segment parallel encoding more then " ) + static_cast< char >( VVENC_MCTF_RANGE + '0' ) + " frames have to be encoded";
-  vvenc_confirmParameter( c, c->m_SegmentMode != VVENC_SEG_OFF && c->m_framesToBeEncoded < VVENC_MCTF_RANGE, errorSegLessRng.c_str() );
+  vvenc_confirmParameter( c, c->m_SegmentMode != VVENC_SEG_OFF && c->m_SegmentMode != VVENC_SEG_LAST && c->m_framesToBeEncoded < VVENC_MCTF_RANGE, errorSegLessRng.c_str() );
   for( int i = 0; i < c->m_vvencMCTF.numFrames; i++ )
   {
     vvenc_confirmParameter( c, c->m_vvencMCTF.MCTFFrames[ i ] <= 0, "MCTFFrame has to be greater then zero" );
@@ -2035,6 +2067,7 @@ static bool checkCfgParameter( vvenc_config *c )
   vvenc_confirmParameter( c, c->m_MinQT[ 1 ] < ( 1 << c->m_log2MinCodingBlockSize ),                                    "Log2MinCodingBlockSize must be greater than min QT size for non I slices" );
   const int chromaScaleX = ( (c->m_internChromaFormat==VVENC_CHROMA_444) ) ? 0 : 1;
   vvenc_confirmParameter( c, ( c->m_MinQT[ 2 ] << chromaScaleX ) < ( 1 << c->m_log2MinCodingBlockSize ),                "Log2MinCodingBlockSize must be greater than min chroma QT size for I slices" );
+  vvenc_confirmParameter( c, c->m_dualITree && c->m_CTUSize == 128 && c->m_maxBT[0] == 128,                             "MaxBTLumaISlice has to be smaller than 128 if DualITree is enabled" );
 
   if( c->m_maxMTTDepth >= 10 && c->m_maxMTTDepth >= pow( 10, ( maxTLayer + 1 ) ) )
   {
@@ -2086,7 +2119,7 @@ static bool checkCfgParameter( vvenc_config *c )
   }
   if( c->m_ifpLines )
   {
-    const int minNumThreadsIfp = getNumThreadsDefault( c ) * 2;
+    const int minNumThreadsIfp = getNumThreadsDefault( c ) * 3 / 2;
     if( c->m_numThreads < minNumThreadsIfp )
     {
       msg.log( VVENC_WARNING, "Using IFP at low number of threads (<%d) does not provide more speedup, consider disabling IFP.\n", minNumThreadsIfp );
@@ -2098,7 +2131,7 @@ static bool checkCfgParameter( vvenc_config *c )
   vvenc_confirmParameter(c, c->m_maxNumMergeCand < 1,                              "MaxNumMergeCand must be 1 or greater.");
   vvenc_confirmParameter(c, c->m_maxNumMergeCand > vvenc::MRG_MAX_NUM_CANDS,              "MaxNumMergeCand must be no more than MRG_MAX_NUM_CANDS." );
   vvenc_confirmParameter(c, c->m_maxNumGeoCand > vvenc::GEO_MAX_NUM_UNI_CANDS,            "MaxNumGeoCand must be no more than GEO_MAX_NUM_UNI_CANDS." );
-  vvenc_confirmParameter(c, c->m_maxNumGeoCand > c->m_maxNumMergeCand,                "MaxNumGeoCand must be no more than MaxNumMergeCand." );
+  vvenc_confirmParameter(c, c->m_Geo > 0 && c->m_maxNumGeoCand > c->m_maxNumMergeCand,    "MaxNumGeoCand must be no more than MaxNumMergeCand." );
   vvenc_confirmParameter(c, 0 < c->m_maxNumGeoCand && c->m_maxNumGeoCand < 2,         "MaxNumGeoCand must be no less than 2 unless MaxNumGeoCand is 0." );
   vvenc_confirmParameter(c, c->m_maxNumAffineMergeCand < (c->m_SbTMVP ? 1 : 0),       "MaxNumAffineMergeCand must be greater than 0 when SbTMVP is enabled");
   vvenc_confirmParameter(c, c->m_maxNumAffineMergeCand > vvenc::AFFINE_MRG_MAX_NUM_CANDS, "MaxNumAffineMergeCand must be no more than AFFINE_MRG_MAX_NUM_CANDS." );
@@ -2165,14 +2198,64 @@ static bool checkCfgParameter( vvenc_config *c )
 
   vvenc_confirmParameter(c, c->m_fastLocalDualTreeMode < 0 || c->m_fastLocalDualTreeMode > 2, "FastLocalDualTreeMode must be in range [0..2]" );
 
-  if( c->m_picPartitionFlag || c->m_numTileCols > 1 || c->m_numTileRows > 1 )
+  if( c->m_picPartitionFlag || c->m_numTileCols > 1 || c->m_numTileRows > 1 || c->m_tileColumnWidth[0] > 0 || c->m_tileRowHeight[0] > 0 )
   {
     if( !c->m_picPartitionFlag ) c->m_picPartitionFlag = true;
 
     checkCfgPicPartitioningParameter( c );
   }
 
+  vvenc_confirmParameter(c, c->m_GOPQPA > 0 && c->m_usePerceptQPA, "GOP-wise QPA cannot be enabled if perceptual QPA is enabled");
+  vvenc_confirmParameter(c, c->m_GOPQPA < 0, "GOPQPA must be >= 0");
+
   return( c->m_confirmFailed );
+}
+
+static void initMultithreading( vvenc_config *c )
+{
+  int mtProfile      = c->m_mtProfile;
+
+  if( mtProfile < 0 )
+  {
+    int numThreads     = c->m_numThreads;
+    int defaultThreads = getNumThreadsDefault( c );
+
+    if( numThreads <= defaultThreads ) mtProfile = 0;
+    else if( 2 * numThreads <= 3 * defaultThreads ) mtProfile = 1;
+    else if( numThreads <= 2 * defaultThreads ) mtProfile = 2;
+    else mtProfile = 3;
+  }
+
+  c->m_mtProfile = mtProfile;
+
+  if( mtProfile == 0 )
+  {
+    if( c->m_entropyCodingSyncEnabled < 0 ) c->m_entropyCodingSyncEnabled = 0;
+    if( c->m_ifp < 0 ) c->m_ifp = 0;
+
+    return;
+  }
+
+  bool isHD   = std::min( c->m_SourceWidth, c->m_SourceHeight ) >= 720;
+  bool isLCTU = c->m_CTUSize == 128;
+  bool isTileDefault = c->m_numTileCols < 0 && c->m_numTileRows < 0 && c->m_tileRowHeight[0] == 0 && c->m_tileColumnWidth[0] == 0;
+
+  if( isLCTU )
+  {
+    if( c->m_entropyCodingSyncEnabled < 0 ) c->m_entropyCodingSyncEnabled = ( !isHD || mtProfile >= 2 ) ? 1 : 0;
+    if( c->m_ifp < 0 ) c->m_ifp = mtProfile == 3 ? 1 : 0;
+  }
+  else
+  {
+    if( c->m_entropyCodingSyncEnabled < 0 ) c->m_entropyCodingSyncEnabled = mtProfile == 3 ? 1 : 0;
+    if( c->m_ifp < 0 ) c->m_ifp =  ( !isHD || mtProfile >= 2 ) ? 1 : 0;
+  }
+  
+  if( isHD && isTileDefault )
+  {
+    c->m_numTileRows = c->m_ifp == 1 ? 1 : 2;
+    c->m_numTileCols = 2;
+  }
 }
 
 static void checkCfgPicPartitioningParameter( vvenc_config *c )
@@ -2394,6 +2477,7 @@ VVENC_DECL int vvenc_init_default( vvenc_config *c, int width, int height, int f
   c->m_RCMaxBitrate        = 0;                        // maximum instantaneous bitrate in bps
 
   c->m_numThreads          = -1;                       // number of worker threads (-1: auto, 0: off, else set worker threads)
+  c->m_mtProfile           = -1;                       // set mtProfile to auto
 
   iRet = vvenc_init_preset( c, preset );
   return iRet;
@@ -2486,6 +2570,7 @@ VVENC_DECL int vvenc_init_preset( vvenc_config *c, vvencPresetMode preset )
       c->m_minSearchWindow                 = 96;
       c->m_fastInterSearchMode             = VVENC_FASTINTERSEARCH_MODE3;
       c->m_motionEstimationSearchMethod    = VVENC_MESEARCH_DIAMOND_FAST;
+      c->m_maxNumMergeCand                 = 4;
 
       // partitioning: CTUSize64 QT44MTT00
       c->m_CTUSize                         = 64;
@@ -2542,6 +2627,7 @@ VVENC_DECL int vvenc_init_preset( vvenc_config *c, vvencPresetMode preset )
       c->m_minSearchWindow                 = 96;
       c->m_fastInterSearchMode             = VVENC_FASTINTERSEARCH_MODE3;
       c->m_motionEstimationSearchMethod    = VVENC_MESEARCH_DIAMOND_FAST;
+      c->m_maxNumMergeCand                 = 4;
 
       // partitioning: CTUSize64 QT44MTT00
       c->m_CTUSize                         = 64;
@@ -3107,7 +3193,8 @@ VVENC_DECL const char* vvenc_get_config_as_string( vvenc_config *c, vvencMsgLeve
       css << loglvl << "log2_sao_offset_scale_luma             : " << c->m_log2SaoOffsetScale[ 0 ] << "\n";
       css << loglvl << "log2_sao_offset_scale_chroma           : " << c->m_log2SaoOffsetScale[ 1 ] << "\n";
     }
-    css << loglvl << "Cost function:                         : " << getCostFunctionStr( c->m_costMode ) << "\n";
+    css << loglvl << "Cost function                          : " << getCostFunctionStr( c->m_costMode ) << "\n";
+    css << loglvl << "Film grain analysis                    : " << (int)c->m_fga << "\n";
     }
 
   if( eMsgLevel >= VVENC_VERBOSE )
@@ -3287,7 +3374,7 @@ VVENC_DECL const char* vvenc_get_config_as_string( vvenc_config *c, vvencMsgLeve
       css << "TileParallelCtuEnc:" << c->m_tileParallelCtuEnc << " ";
     }
     css << "WppBitEqual:" << c->m_ensureWppBitEqual << " ";
-    css << "WF:" << c->m_entropyCodingSyncEnabled << " ";
+    css << "WF:" << (int) c->m_entropyCodingSyncEnabled << " ";
     css << "\n";
   }
 

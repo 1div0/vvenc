@@ -121,6 +121,7 @@ void GOPCfg::initGopList( int refreshType, bool poc0idr, int intraPeriod, int go
   m_numTillIntra = poc0idr ? 0 : (int)m_gopList->size() - 1;
   m_minIntraDist = minIntraDist;
   m_lastIntraPOC = -1;
+  m_adjustNoLPcodingOrder = m_refreshType == VVENC_DRT_IDR_NO_RADL && m_fixIntraPeriod <= m_maxGopSize;
 }
 
 void GOPCfg::getNextGopEntry( GOPEntry& gopEntry )
@@ -170,11 +171,15 @@ void GOPCfg::getNextGopEntry( GOPEntry& gopEntry )
   const int  pocInGop   = m_nextPoc - m_pocOffset;
   const int  gopId      = m_pocToGopIdx[ pocInGop % (int)m_pocToGopIdx.size() ];
   const bool isLeading0 = m_poc0idr && m_nextPoc == 0 ? true : false; // for poc0idr, we have a leading poc 0
-
+  
   gopEntry             = (*m_gopList)[ gopId ];
   gopEntry.m_POC       = m_nextPoc;
   gopEntry.m_codingNum = isLeading0 ? 0 : m_cnOffset + gopId;
   gopEntry.m_gopNum    = m_gopNum;
+  if( m_nextPoc != 0 && m_adjustNoLPcodingOrder )
+  {
+    xAdjustNoLPcodingOrder( gopEntry, gopId );
+  }
   gopEntry.m_isValid   = true;
 
   // mark start of intra
@@ -183,6 +188,7 @@ void GOPCfg::getNextGopEntry( GOPEntry& gopEntry )
     gopEntry.m_sliceType      = 'I';
     gopEntry.m_isStartOfIntra = true;
     gopEntry.m_temporalId     = 0;
+    gopEntry.m_vtl            = 0;
     m_lastIntraPOC            = m_nextPoc;
   }
 
@@ -197,6 +203,7 @@ void GOPCfg::getNextGopEntry( GOPEntry& gopEntry )
       m_gopList      = &m_defaultGopLists[ 0 ];
       m_nextListIdx  = std::min( 1, (int)m_defaultGopLists.size() - 1 );
       m_numTillIntra = m_fixIntraPeriod;
+      m_adjustNoLPcodingOrder = m_refreshType == VVENC_DRT_IDR_NO_RADL && m_fixIntraPeriod <= m_maxGopSize;
     }
     else
     {
@@ -211,6 +218,8 @@ void GOPCfg::getNextGopEntry( GOPEntry& gopEntry )
         CHECK( remainSize != (int)m_remainGopList.size() || prevGopSize != m_defGopSize, "remaining size does not match size of pre-calculated gop list" );
         m_gopList = &m_remainGopList;
       }
+      //if we have a full gop, we don't need to change the coding order...
+      m_adjustNoLPcodingOrder = m_refreshType == VVENC_DRT_IDR_NO_RADL && m_numTillIntra <= m_maxGopSize;
     }
     xCreatePocToGopIdx( *m_gopList, !m_poc0idr, m_pocToGopIdx );
     m_numTillGop  = (int)m_gopList->size();
@@ -238,6 +247,7 @@ void GOPCfg::startIntraPeriod( GOPEntry& gopEntry )
   gopEntry.m_isStartOfIntra = true;
   gopEntry.m_isStartOfGop   = true;
   gopEntry.m_temporalId     = 0;
+  gopEntry.m_vtl            = 0;
   m_lastIntraPOC            = gopEntry.m_POC;
 
   // start with first gop list
@@ -259,11 +269,12 @@ void GOPCfg::startIntraPeriod( GOPEntry& gopEntry )
 void GOPCfg::fixStartOfLastGop( GOPEntry& gopEntry )
 {
   gopEntry.m_isStartOfGop = true;
-  if( gopEntry.m_gopNum == 0 && ! gopEntry.m_isStartOfIntra )
+  if( ! m_poc0idr && gopEntry.m_gopNum == 0 && ! gopEntry.m_isStartOfIntra )
   {
     gopEntry.m_isStartOfIntra = true;
     gopEntry.m_sliceType      = 'I';
     gopEntry.m_temporalId     = 0;
+    gopEntry.m_vtl            = 0;
     m_lastIntraPOC            = gopEntry.m_POC;
   }
 }
@@ -573,17 +584,18 @@ void GOPCfg::xCreateGopList( int maxGopSize, int gopSize, int pocOffset, const v
   std::vector<int> pocToGopIdx;
   xCreatePocToGopIdx( gopList, false, pocToGopIdx );
 
-  // STSA, forward B flags, MCTF index
+  // mark first gop entry
+  gopList[ pocToGopIdx[ 0 ] ].m_isStartOfGop = true;
+
+  // STSA, forward B flags, MCTF index, virtual TLayer
   xSetSTSA     ( gopList, pocToGopIdx );
   xSetBckwdOnly( gopList );
   xSetMctfIndex( maxGopSize, gopList );
+  xSetVTL      ( gopList );
   if( m_firstPassMode == 2 || m_firstPassMode == 4 )
   {
     xSetSkipFirstPass( gopList );
   }
-
-  // mark first gop entry
-  gopList[ pocToGopIdx[ 0 ] ].m_isStartOfGop = true;
 }
 
 void GOPCfg::xGetPrevGopRefs( const GOPEntryList* prevGopList, std::vector< std::pair<int, int> >& prevGopRefs ) const
@@ -852,6 +864,29 @@ void GOPCfg::xSetBckwdOnly( GOPEntryList& gopList ) const
   }
 }
 
+void GOPCfg::xSetVTL( GOPEntryList& gopList ) const
+{
+  if( m_picReordering == 0 )
+  {
+    const int vtl = std::min( m_maxGopSize >> 2, 3 );
+    for( auto& gopEntry : gopList )
+    {
+      CHECK( gopEntry.m_temporalId != 0, "unexpected low delay temporal id" );
+      if( !gopEntry.m_isStartOfGop && !gopEntry.m_isStartOfIntra )
+      {
+        gopEntry.m_vtl = vtl;
+      }
+    }
+  }
+  else
+  {
+    for( auto& gopEntry : gopList )
+    {
+      gopEntry.m_vtl = gopEntry.m_temporalId;
+    }
+  }
+}
+
 void GOPCfg::xSetDefaultRPL( std::vector<GOPEntryList>& defaultLists )
 {
   m_defaultRPLList.clear();
@@ -1093,6 +1128,26 @@ int GOPCfg::xGetMaxNumReorder( const GOPEntry& gopEntry, const GOPEntryList& gop
     }
   }
   return numReorder;
+}
+
+void GOPCfg::xAdjustNoLPcodingOrder( GOPEntry& gopEntry, const int orgGopId ) const
+{
+  if( orgGopId == 0 )
+  {
+    //postpone the intra frame and put it in a new gop
+    gopEntry.m_codingNum += (int)m_pocToGopIdx.size() - 1;
+    gopEntry.m_gopNum    += 1;
+  }
+  else
+  {
+    gopEntry.m_codingNum -= 1;
+    if( orgGopId == 1 && m_fixIntraPeriod > m_maxGopSize )
+    {
+      gopEntry.m_isStartOfGop = true;
+    }
+  }
+
+  return;
 }
 
 } // namespace vvenc
