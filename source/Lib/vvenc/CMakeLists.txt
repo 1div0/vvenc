@@ -170,8 +170,14 @@ else()
   target_link_libraries( ${LIB_NAME} PRIVATE Threads::Threads )
 endif()
 
+if( CMAKE_USE_PTHREADS_INIT )
+  target_compile_definitions( ${LIB_NAME} PRIVATE HAVE_PTHREADS )
+endif()
+
 # set the folder where to place the projects
 set_target_properties( ${LIB_NAME} PROPERTIES
                                    VERSION ${PROJECT_VERSION}
                                    SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+                                   INSTALL_NAME_DIR ${CMAKE_INSTALL_PREFIX}/lib
+                                   MACOSX_RPATH FALSE
                                    FOLDER lib )
