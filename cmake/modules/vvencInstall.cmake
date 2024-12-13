@@ -5,7 +5,19 @@ set( RUNTIME_DEST ${CMAKE_INSTALL_BINDIR} )
 set( LIBRARY_DEST ${CMAKE_INSTALL_LIBDIR} )
 set( ARCHIVE_DEST ${CMAKE_INSTALL_LIBDIR} )
 
+if( VVENC_INSTALL_FULLFEATURE_APP AND VVENC_LIBRARY_ONLY )
+  message( FATAL_ERROR "VVENC_INSTALL_FULLFEATURE_APP conflicts with VVENC_LIBRARY_ONLY" )
+endif()
+
 set( VVENC_INST_TARGETS vvenc )
+
+if( NOT VVENC_LIBRARY_ONLY )
+  list( APPEND VVENC_INST_TARGETS vvencapp )
+
+  if( VVENC_INSTALL_FULLFEATURE_APP )
+    list( APPEND VVENC_INST_TARGETS vvencFFapp )
+  endif()
+endif()
 
 # install targets
 macro( install_targets config_ )
@@ -16,15 +28,6 @@ macro( install_targets config_ )
            RUNTIME DESTINATION ${RUNTIME_DEST}
            LIBRARY DESTINATION ${LIBRARY_DEST}
            ARCHIVE DESTINATION ${ARCHIVE_DEST} )
-  if( VVENC_INSTALL_FULLFEATURE_APP )
-    install( TARGETS             vvencapp vvencFFapp
-             CONFIGURATIONS      ${config_}
-             RUNTIME DESTINATION ${RUNTIME_DEST} )
-  else()
-    install( TARGETS             vvencapp
-             CONFIGURATIONS      ${config_}
-             RUNTIME DESTINATION ${RUNTIME_DEST} )
-  endif()
 endmacro( install_targets )
 
 # install pdb file for static and shared libraries
@@ -64,12 +67,15 @@ install( DIRECTORY include/vvenc                        DESTINATION ${CMAKE_INST
 install_targets( Release )
 install_targets( Debug )
 install_targets( RelWithDebInfo )
+install_targets( MinSizeRel )
 
 # install pdb files
 install_lib_pdb( vvenc )
-install_exe_pdb( vvencapp )
-if( VVENC_INSTALL_FULLFEATURE_APP )
-  install_exe_pdb( vvencFFapp )
+if( NOT VVENC_LIBRARY_ONLY )
+  install_exe_pdb( vvencapp )
+  if( VVENC_INSTALL_FULLFEATURE_APP )
+    install_exe_pdb( vvencFFapp )
+  endif()
 endif()
 
 # configure version file
@@ -89,6 +95,7 @@ endif()
 install( EXPORT vvencTargets-release        NAMESPACE vvenc:: FILE vvencTargets-${CONFIG_POSTFIX}.cmake CONFIGURATIONS Release        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/vvenc )
 install( EXPORT vvencTargets-debug          NAMESPACE vvenc:: FILE vvencTargets-${CONFIG_POSTFIX}.cmake CONFIGURATIONS Debug          DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/vvenc )
 install( EXPORT vvencTargets-relwithdebinfo NAMESPACE vvenc:: FILE vvencTargets-${CONFIG_POSTFIX}.cmake CONFIGURATIONS RelWithDebInfo DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/vvenc )
+install( EXPORT vvencTargets-minsizerel     NAMESPACE vvenc:: FILE vvencTargets-${CONFIG_POSTFIX}.cmake CONFIGURATIONS MinSizeRel     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/vvenc )
 
 function( resolve_target_interface_libs TGT OUT_VAR )
   get_target_property( interface_libs ${TGT} INTERFACE_LINK_LIBRARIES )
@@ -127,6 +134,7 @@ if( VVENC_PKG_EXTRA_LIBS )
   endif()
 
   list( REMOVE_ITEM VVENC_PKG_EXTRA_LIBS "-lc" )
+  list( REMOVE_ITEM VVENC_PKG_EXTRA_LIBS "-lgcc_s" )
 endif()
 
 resolve_target_interface_libs( vvenc VVENC_PKG_INTERFACE_LIBS )

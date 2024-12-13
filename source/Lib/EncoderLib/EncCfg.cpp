@@ -70,14 +70,41 @@ VVEncCfg& VVEncCfg::operator= ( const vvenc_config& extern_cfg )
   return *this;
 }
 
+static unsigned getMaxTlVal( unsigned perTlVal )
+{
+  unsigned maxVal = 0;
+  while( perTlVal > 0 )
+  {
+    maxVal    = std::max( maxVal, perTlVal % 10 );
+    perTlVal /= 10;
+  }
+  return maxVal;
+}
+
 void VVEncCfg::xInitCfgMembers()
 {
-  m_stageParallelProc = m_numThreads > 0 && m_maxParallelFrames > 0;
-  m_log2GopSize       = floorLog2( m_GOPSize );
-  m_maxTLayer         = m_picReordering && m_GOPSize > 1 ? vvenc::ceilLog2( m_GOPSize ) : 0;
-  m_bimCtuSize        = m_CTUSize;
-  m_MaxQT[0] = m_MaxQT[1] = m_MaxQT[2] = m_CTUSize;
-  m_rateCap = m_RCMaxBitrate > 0 && m_RCMaxBitrate < INT32_MAX && m_RCTargetBitrate == 0;
+  m_stageParallelProc   = m_numThreads > 0 && m_maxParallelFrames > 0;
+  m_log2GopSize         = floorLog2( m_GOPSize );
+  m_maxTLayer           = m_picReordering && m_GOPSize > 1 ? vvenc::ceilLog2( m_GOPSize ) : 0;
+  m_bimCtuSize          = m_CTUSize;
+  m_MaxQT[0]            =
+  m_MaxQT[1]            = 
+  m_MaxQT[2]            = m_CTUSize;
+  m_rateCap             = m_RCMaxBitrate > 0 && m_RCMaxBitrate < INT32_MAX && m_RCTargetBitrate == 0;
+  m_reuseCuResults      = ( m_IntraPeriod > 1 && getMaxTlVal( m_maxMTTDepth ) > 1 ) || m_maxMTTDepthI > ( m_IntraPeriod == 1 ? 1 : 2 );
+  m_splitCostThrParamId = getMaxTlVal(m_maxMTTDepth);
+
+  m_mergeRdCandQuotaRegular = std::min( NUM_MRG_SATD_CAND, std::max( ( int ) m_maxNumMergeCand - 2, 1 ) );
+  //                                        0  1  2  3  4
+  static constexpr int mrgNumSmallBlk[] = { 0, 1, 1, 2, 2 };
+  m_mergeRdCandQuotaRegularSmallBlk
+                            = mrgNumSmallBlk[m_mergeRdCandQuotaRegular];
+  m_mergeRdCandQuotaSubBlk  = std::min( m_Affine ? NUM_AFF_MRG_SATD_CAND : 0, ( int ) m_maxNumAffineMergeCand );
+  m_mergeRdCandQuotaCiip    = m_CIIP > 0 && m_CIIP < 3 ? 1 : 0;
+  m_mergeRdCandQuotaGpm     = m_Geo ? ( m_Geo > 1 ? 2 : GEO_MAX_TRY_WEIGHTED_SATD ) : 0;
+  //                                     0  1  2  3  4  5  6  7  8  9  10  11  12  13  14  15
+  static constexpr int mrgNumTotal[] = { 0, 1, 2, 3, 3, 4, 5, 5, 6, 7,  7,  8,  9,  9, 10, 11 };
+  m_maxMergeRdCandNumTotal  = mrgNumTotal[m_mergeRdCandQuotaRegular + m_mergeRdCandQuotaSubBlk + m_mergeRdCandQuotaCiip + m_mergeRdCandQuotaGpm];
 
   if ( this->m_fga )
   {
@@ -101,6 +128,17 @@ void VVEncCfg::xInitCfgMembers()
     m_fg.m_fgcSEINumModelValuesMinus1[0] = 0;
     m_fg.m_fgcSEINumModelValuesMinus1[1] = 0;
     m_fg.m_fgcSEINumModelValuesMinus1[2] = 0;
+  }
+  
+  if( m_usePerceptQPATempFiltISlice > 2 )
+  {
+    m_internalUsePerceptQPATempFiltISlice = m_usePerceptQPATempFiltISlice - 2;
+    m_disableForce2ndOderFilter           = true;
+  }
+  else
+  {
+    m_internalUsePerceptQPATempFiltISlice = m_usePerceptQPATempFiltISlice;
+    m_disableForce2ndOderFilter           = false;
   }
 }
 

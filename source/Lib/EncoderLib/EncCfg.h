@@ -77,15 +77,24 @@ struct VVEncCfg : public vvenc_config
 
   VVEncCfg& operator= ( const vvenc_config& extern_cfg );
 
-  bool m_stageParallelProc;
-  bool m_salienceBasedOpt;
-  bool m_rateCap;
-  int  m_log2GopSize;
-  int  m_maxTLayer;
-  int  m_bimCtuSize;
-  unsigned m_MaxQT[3];
-  vvencFG  m_fg;
-
+  bool      m_stageParallelProc;
+  bool      m_salienceBasedOpt;
+  bool      m_rateCap;
+  int       m_log2GopSize;
+  int       m_maxTLayer;
+  int       m_bimCtuSize;
+  unsigned  m_MaxQT[3];
+  int       m_maxMergeRdCandNumTotal;
+  int       m_mergeRdCandQuotaRegular;
+  int       m_mergeRdCandQuotaRegularSmallBlk;
+  int       m_mergeRdCandQuotaSubBlk;
+  int       m_mergeRdCandQuotaCiip;
+  int       m_mergeRdCandQuotaGpm;
+  bool      m_reuseCuResults;
+  int       m_splitCostThrParamId;
+  vvencFG   m_fg;
+  int       m_internalUsePerceptQPATempFiltISlice;
+  bool      m_disableForce2ndOderFilter;
 
 private:
   void xInitCfgMembers();

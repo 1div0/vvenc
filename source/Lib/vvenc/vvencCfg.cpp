@@ -623,7 +623,7 @@ VVENC_DECL void vvenc_config_default(vvenc_config *c )
   c->m_vuiParametersPresent                    = -1;
   c->m_hrdParametersPresent                    = true;
   c->m_aspectRatioInfoPresent                  = false;
-  c->m_aspectRatioIdc                          = 0;
+  c->m_aspectRatioIdc                          = 1;
   c->m_sarWidth                                = 0;
   c->m_sarHeight                               = 0;
   c->m_colourDescriptionPresent                = false;
@@ -666,6 +666,7 @@ VVENC_DECL void vvenc_config_default(vvenc_config *c )
   c->m_ifpLines                                = -1;
   c->m_ifp                                     = -1;
   c->m_mtProfile                               =  0;
+  c->m_numParallelGOPs                         =  0;
 
   c->m_picPartitionFlag                        = false;
   memset( c->m_tileColumnWidth, 0, sizeof(c->m_tileColumnWidth) );
@@ -705,7 +706,7 @@ VVENC_DECL void vvenc_config_default(vvenc_config *c )
 
   c->m_fga                                     = false;
 
-  memset( c->m_reservedInt, 0, sizeof(c->m_reservedInt) );
+  memset( c->m_reservedInt8, 0, sizeof(c->m_reservedInt8) );
   memset( c->m_reservedDouble, 0, sizeof(c->m_reservedDouble) );
 
   // init default preset
@@ -1150,6 +1151,16 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
     c->m_vuiParametersPresent = 0;
   }
 
+  if( !c->m_aspectRatioInfoPresent && ( c->m_aspectRatioIdc > 0 || (c->m_sarWidth > 0 && c->m_sarHeight > 0 )))
+  {
+    c->m_aspectRatioInfoPresent = true;
+  }
+
+  if( !c->m_overscanInfoPresent && c->m_overscanAppropriateFlag)
+  {
+    c->m_overscanInfoPresent = true;
+  }
+
   if( c->m_chromaSampleLocType < 0 )
   {
     if( c->m_horCollocatedChromaFlag )
@@ -1485,6 +1496,7 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
   vvenc_confirmParameter( c, c->m_blockImportanceMapping && !c->m_vvencMCTF.MCTF, "BIM (block importance mapping) cannot be enabled when MCTF is disabled!" );
   vvenc_confirmParameter( c, c->m_blockImportanceMapping && c->m_vvencMCTF.MCTFUnitSize > c->m_CTUSize, "MCTFUnitSize cannot exceed CTUSize if BIM is enabled!" );
 
+  bool disableF2O = c->m_usePerceptQPATempFiltISlice < -1;
   if ( c->m_usePerceptQPATempFiltISlice < 0 )
   {
     c->m_usePerceptQPATempFiltISlice = 0;
@@ -1502,6 +1514,10 @@ VVENC_DECL bool vvenc_init_config_parameter( vvenc_config *c )
       && ( c->m_vvencMCTF.MCTF == 0 || ! c->m_usePerceptQPA ) )
   {
     c->m_usePerceptQPATempFiltISlice = 0; // fully disable temporal filtering features
+  }
+  if( disableF2O && c->m_usePerceptQPATempFiltISlice > 0 )
+  {
+    c->m_usePerceptQPATempFiltISlice += 2;
   }
 
   if ( c->m_cuQpDeltaSubdiv < 0)
@@ -1920,8 +1936,8 @@ static bool checkCfgParameter( vvenc_config *c )
 
   vvenc_confirmParameter( c, (isHDRMode(c->m_HdrMode) && c->m_internalBitDepth[0] < 10 )     ,       "InternalBitDepth must be at least 10 bit for HDR");
   vvenc_confirmParameter( c, (isHDRMode(c->m_HdrMode) && c->m_internChromaFormat != VVENC_CHROMA_420 ) ,"ChromaFormatIDC must be YCbCr 4:2:0 for HDR");
-  vvenc_confirmParameter( c, (c->m_contentLightLevel[0] < 0 || c->m_contentLightLevel[0] > 10000),  "max content light level must 0 <= cll <= 10000 ");
-  vvenc_confirmParameter( c, (c->m_contentLightLevel[1] < 0 || c->m_contentLightLevel[1] > 10000),  "max average content light level must 0 <= cll <= 10000 ");
+  vvenc_confirmParameter( c, (c->m_contentLightLevel[0] > 10000),  "max content light level must 0 <= cll <= 10000 ");
+  vvenc_confirmParameter( c, (c->m_contentLightLevel[1] > 10000),  "max average content light level must 0 <= cll <= 10000 ");
 
   {
     bool outOfRGBRange = false;
@@ -1985,7 +2001,7 @@ static bool checkCfgParameter( vvenc_config *c )
   vvenc_confirmParameter( c, c->m_Affine < 0 || c->m_Affine > 5,              "Affine out of range [0..5]" );
   vvenc_confirmParameter( c, c->m_MMVD < 0 || c->m_MMVD > 4,                  "MMVD out of range [0..4]" );
   vvenc_confirmParameter( c, c->m_SMVD < 0 || c->m_SMVD > 3,                  "SMVD out of range [0..3]" );
-  vvenc_confirmParameter( c, c->m_Geo  < 0 || c->m_Geo  > 3,                  "Geo out of range [0..3]" );
+  vvenc_confirmParameter( c, c->m_Geo  < 0 || c->m_Geo  > 4,                  "Geo out of range [0..4]" );
   vvenc_confirmParameter( c, c->m_CIIP < 0 || c->m_CIIP > 3,                  "CIIP out of range [0..3]" );
   vvenc_confirmParameter( c, c->m_SBT  < 0 || c->m_SBT  > 3,                  "SBT out of range [0..3]" );
   vvenc_confirmParameter( c, c->m_LFNST< 0 || c->m_LFNST> 3,                  "LFNST out of range [0..3]" );
@@ -2074,8 +2090,10 @@ static bool checkCfgParameter( vvenc_config *c )
     msg.log( VVENC_WARNING, "Configuration warning: chroma QPA on, ignoring nonzero dual-tree chroma QP offsets!\n\n");
   }
 
-  vvenc_confirmParameter(c, c->m_usePerceptQPATempFiltISlice > 2,                                                       "PerceptQPATempFiltIPic out of range, must be 2 or less" );
+  vvenc_confirmParameter(c, c->m_usePerceptQPATempFiltISlice > 4,                                                       "PerceptQPATempFiltIPic out of range, must be 4 or less" );
   vvenc_confirmParameter(c, c->m_usePerceptQPATempFiltISlice > 0 && c->m_vvencMCTF.MCTF == 0,                           "PerceptQPATempFiltIPic must be turned off when MCTF is off" );
+  vvenc_confirmParameter(c, c->m_SegmentMode != VVENC_SEG_OFF && c->m_usePerceptQPATempFiltISlice > 0 && c->m_usePerceptQPATempFiltISlice < 3, "Segmentwise encoding requires disabling of force 2nd order filter with PerceptQPATempFiltIPic set to 3 or 4"  );
+  vvenc_confirmParameter(c, ( c->m_leadFrames > 0 || c->m_trailFrames > 0 ) && c->m_usePerceptQPATempFiltISlice > 0 && c->m_usePerceptQPATempFiltISlice < 3, "Segmentwise encoding requires disabling of force 2nd order filter with PerceptQPATempFiltIPic set to 3 or 4"  );
 
   vvenc_confirmParameter(c, c->m_usePerceptQPA && (c->m_cuQpDeltaSubdiv > 2),                                           "MaxCuDQPSubdiv must be 2 or smaller when PerceptQPA is on" );
 
@@ -2152,6 +2170,19 @@ static bool checkCfgParameter( vvenc_config *c )
     {
       msg.log( VVENC_WARNING, "Using IFP at low number of threads (<%d) does not provide more speedup, consider disabling IFP.\n", minNumThreadsIfp );
     }
+  }
+
+  if( c->m_numParallelGOPs )
+  {
+    vvenc_confirmParameter(c, (c->m_RCMaxBitrate > 0 && c->m_RCMaxBitrate < INT32_MAX) || c->m_RCTargetBitrate > 0, "No support for GOP parallel processing in rate control mode" );
+    vvenc_confirmParameter(c, c->m_numThreads == 0, "For GOP parallel processing, NumThreads > 0 is required" );
+    vvenc_confirmParameter(c, c->m_maxParallelFrames == 0, "For GOP parallel processing MaxParallelFrames > 0 is required" );
+    vvenc_confirmParameter(c, c->m_ifpLines == 0, "For GOP parallel processing IFP > 0 is required" );
+
+    // GOP parallel profile
+    const int minNumThreadsGOPPP = getNumThreadsDefault( c ) * 2;
+    if( c->m_numThreads < minNumThreadsGOPPP )
+      msg.log( VVENC_WARNING, "Using NumParallelGOPs at low number of threads (<%d) does not provide more speedup, consider disabling NumParallelGOPs.\n", minNumThreadsGOPPP );
   }
 
   vvenc_confirmParameter(c, c->m_explicitAPSid < 0 || c->m_explicitAPSid > 7, "ExplicitAPDid out of range [0 .. 7]" );
@@ -2718,6 +2749,8 @@ VVENC_DECL int vvenc_init_preset( vvenc_config *c, vvencPresetMode preset )
       c->m_minSearchWindow                 = 96;
       c->m_fastInterSearchMode             = VVENC_FASTINTERSEARCH_MODE3;
       c->m_motionEstimationSearchMethod    = VVENC_MESEARCH_DIAMOND_FAST;
+      c->m_maxNumMergeCand                 = 5;
+      c->m_maxNumAffineMergeCand           = 3;
 
       // partitioning: CTUSize64 QT44MTT10
       c->m_CTUSize                         = 64;
@@ -2786,6 +2819,9 @@ VVENC_DECL int vvenc_init_preset( vvenc_config *c, vvencPresetMode preset )
       c->m_minSearchWindow                 = 96;
       c->m_fastInterSearchMode             = VVENC_FASTINTERSEARCH_MODE3;
       c->m_motionEstimationSearchMethod    = VVENC_MESEARCH_DIAMOND_FAST;
+      c->m_maxNumMergeCand                 = 5;
+      c->m_maxNumAffineMergeCand           = 3;
+      c->m_maxNumGeoCand                   = 3;
 
       // partitioning: CTUSize128 QT44MTT21
       c->m_CTUSize                         = 128;
@@ -2802,7 +2838,7 @@ VVENC_DECL int vvenc_init_preset( vvenc_config *c, vvencPresetMode preset )
       c->m_contentBasedFastQtbt            = true;
       c->m_fastHad                         = false;
       c->m_usePbIntraFast                  = 1;
-      c->m_useFastMrg                      = 2;
+      c->m_useFastMrg                      = 3;
       c->m_fastLocalDualTreeMode           = 1;
       c->m_fastSubPel                      = 1;
       c->m_FastIntraTools                  = 1;
@@ -2828,7 +2864,7 @@ VVENC_DECL int vvenc_init_preset( vvenc_config *c, vvencPresetMode preset )
       c->m_DepQuantEnabled                 = 1;
       c->m_DMVR                            = 1;
       c->m_EDO                             = 2;
-      c->m_Geo                             = 3;
+      c->m_Geo                             = 4;
       c->m_AMVRspeed                       = 5;
       c->m_ISP                             = 3;
       c->m_JointCbCrMode                   = 1;
@@ -2868,7 +2904,7 @@ VVENC_DECL int vvenc_init_preset( vvenc_config *c, vvencPresetMode preset )
         c->m_bUseSAO                       = true;
         c->m_saoScc                        = true;
         c->m_SbTMVP                        = 0;
-        c->m_useFastMrg                    = 2;
+        c->m_useFastMrg                    = 3;
       }
 
       break;
@@ -2897,7 +2933,7 @@ VVENC_DECL int vvenc_init_preset( vvenc_config *c, vvencPresetMode preset )
       c->m_contentBasedFastQtbt            = true;
       c->m_fastHad                         = false;
       c->m_usePbIntraFast                  = 1;
-      c->m_useFastMrg                      = 3;
+      c->m_useFastMrg                      = 2;
       c->m_fastLocalDualTreeMode           = 1;
       c->m_fastSubPel                      = 1;
       c->m_FastIntraTools                  = 0;
@@ -2924,7 +2960,7 @@ VVENC_DECL int vvenc_init_preset( vvenc_config *c, vvencPresetMode preset )
       c->m_DepQuantEnabled                 = 1;
       c->m_DMVR                            = 1;
       c->m_EDO                             = 2;
-      c->m_Geo                             = 1;
+      c->m_Geo                             = 2;
       c->m_AMVRspeed                       = 1;
       c->m_ISP                             = 3;
       c->m_JointCbCrMode                   = 1;
@@ -3076,7 +3112,7 @@ VVENC_DECL int vvenc_init_preset( vvenc_config *c, vvencPresetMode preset )
       c->m_DepQuantEnabled                 = 1;
       c->m_DMVR                            = 1;
       c->m_EDO                             = 1;
-      c->m_Geo                             = 2;
+      c->m_Geo                             = 3;
       c->m_AMVRspeed                       = 3;
       c->m_ISP                             = 2;
       c->m_JointCbCrMode                   = 1;
@@ -3398,6 +3434,7 @@ VVENC_DECL const char* vvenc_get_config_as_string( vvenc_config *c, vvencMsgLeve
     css << "NumThreads:" << c->m_numThreads << " ";
     css << "MaxParallelFrames:" << c->m_maxParallelFrames << " ";
     css << "IFP:" << (c->m_ifp ? 1: 0) << " (IFPLines:" << (int)c->m_ifpLines << ")" << " ";
+    css << "NumParallelGOPs:" << c->m_numParallelGOPs << " ";
     if( c->m_picPartitionFlag )
     {
       css << "TileParallelCtuEnc:" << c->m_tileParallelCtuEnc << " ";
