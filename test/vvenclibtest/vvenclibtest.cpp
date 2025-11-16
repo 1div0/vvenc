@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2024, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2025, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -54,6 +54,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <cstring>
 #include <vector>
 #include <tuple>
+#include <unordered_set>
 
 #include "vvenc/version.h"
 #include "vvenc/vvenc.h"
@@ -897,8 +898,8 @@ int checkSDKStringApiInvalid()
 
 static int runEncoder( vvenc_config& c, uint64_t framesToEncode, bool emulateMissingFrames = false ) 
 {
-  uint64_t ctsDiff   = (c.m_TicksPerSecond > 0) ? (uint64_t)c.m_TicksPerSecond * (uint64_t)c.m_FrameScale / (uint64_t)c.m_FrameRate : 1;  // expected cts diff between frames
-  uint64_t ctsOffset = (c.m_TicksPerSecond > 0) ? (uint64_t)c.m_TicksPerSecond : (uint64_t)c.m_FrameRate/(uint64_t)c.m_FrameScale;        // start with offset 1sec, to generate  cts/dts > 0
+  int64_t ctsDiff   = (c.m_TicksPerSecond > 0) ? (int64_t)c.m_TicksPerSecond * (int64_t)c.m_FrameScale / (int64_t)c.m_FrameRate : 1;  // expected cts diff between frames
+  int64_t ctsOffset = (c.m_TicksPerSecond > 0) ? (int64_t)c.m_TicksPerSecond : (int64_t)c.m_FrameRate  / (int64_t)c.m_FrameScale;     // start with offset 1sec, to generate  cts/dts > 0
   //std::cout << "test framerate " << c.m_FrameRate << "/" << c.m_FrameScale << " TicksPerSecond  " << c.m_TicksPerSecond << " ctsDiff " << ctsDiff << " framesToEncode " << framesToEncode  << std::endl;
   vvencEncoder *enc = vvenc_encoder_create();
   if( nullptr == enc )
@@ -917,12 +918,16 @@ static int runEncoder( vvenc_config& c, uint64_t framesToEncode, bool emulateMis
   vvenc_YUVBuffer_alloc_buffer( yuvPicture, c.m_internChromaFormat, c.m_SourceWidth, c.m_SourceHeight );
   fillInputPic( yuvPicture );
   
-  uint64_t lastDts=0;
+  int64_t lastDts=0;
   uint64_t auCount=0;
   bool eof       = false;
   bool encodeDone = false;
   uint64_t framesRcvd = 0;
   uint64_t numMissingFrames = emulateMissingFrames ? 10 : 0;
+
+#if VVENC_USE_UNSTABLE_API
+  std::unordered_set<int> userDataSet;
+#endif
 
   while( !eof || !encodeDone )
   {
@@ -930,8 +935,11 @@ static int runEncoder( vvenc_config& c, uint64_t framesToEncode, bool emulateMis
     if ( ! eof )
     {
       inputPtr             = yuvPicture;
-      yuvPicture->cts      = (c.m_TicksPerSecond > 0) ? (ctsOffset + (framesRcvd * (uint64_t)c.m_TicksPerSecond * (uint64_t)c.m_FrameScale / (uint64_t)c.m_FrameRate)) : (ctsOffset + framesRcvd);
+      yuvPicture->cts      = (c.m_TicksPerSecond > 0) ? (ctsOffset + (framesRcvd * c.m_TicksPerSecond * c.m_FrameScale / c.m_FrameRate)) : (ctsOffset + framesRcvd);
       yuvPicture->ctsValid = true;
+#if VVENC_USE_UNSTABLE_API
+      yuvPicture->userData   = new int(framesRcvd);
+#endif
       framesRcvd++;
 
       if( emulateMissingFrames && framesRcvd == framesToEncode>>1 )
@@ -964,6 +972,11 @@ static int runEncoder( vvenc_config& c, uint64_t framesToEncode, bool emulateMis
         }
       }
       lastDts = AU->dts;
+#if VVENC_USE_UNSTABLE_API
+      int* userData = static_cast<int*>(AU->userData);
+      userDataSet.insert( *userData);
+      delete userData;
+#endif
     }
 
     if ( auCount > 0 && (!AU || ( AU &&  AU->payloadUsedSize == 0 )) )
@@ -983,6 +996,14 @@ static int runEncoder( vvenc_config& c, uint64_t framesToEncode, bool emulateMis
     //std::cout << "expecting " << framesToEncode << " au, but only encoded " << auCount << std::endl;
     goto fail;
   }
+
+#if VVENC_USE_UNSTABLE_API
+  if (userDataSet.size() != framesToEncode)
+  {
+    //std::cout << "expecting " << framesToEncode << " unique user data values, but got " << userDataSet.size() << std::endl;
+    goto fail;
+  }
+#endif
 
   vvenc_YUVBuffer_free( yuvPicture, true );
   vvenc_accessUnit_free( AU, true );

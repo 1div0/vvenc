@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2024, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2025, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -2455,6 +2455,7 @@ void EncGOP::xWritePicture( Picture& pic, AccessUnitList& au, bool isEncodeLtRef
   au.poc           = pic.poc;
   au.temporalLayer = pic.TLayer;
   au.refPic        = pic.isReferenced;
+  au.userData      = pic.userData;
   if( ! pic.slices.empty() )
   {
     au.sliceType = pic.slices[ 0 ]->sliceType;

@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2024, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2025, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -79,6 +79,8 @@ POSSIBILITY OF SUCH DAMAGE.
 #pragma warning( disable : 4018 )
 // disable bool coercion "performance warning"
 #pragma warning( disable : 4800 )
+// disable "conditional expression is constant" warning (cannot do `if constexpr` in C++14)
+#pragma warning( disable : 4127 )
 #endif // _MSC_VER > 1000
 
 #define __IN_COMMONDEF_H__
@@ -120,6 +122,10 @@ POSSIBILITY OF SUCH DAMAGE.
 #  define SIMD_PREFETCH_T0( _s )
 # endif   // ENABLE_SIMD_OPT
 #endif    // TARGET_SIMD_X86
+
+#if !ENABLE_SIMD_LOG2
+#include <cmath>
+#endif
 
 //! \ingroup CommonLib
 //! \{
@@ -691,7 +697,7 @@ static inline int getLog2( int val )
   return bit_scan_reverse( val );
 }
 #else
-extern int8_t g_aucLog2[MAX_CU_SIZE + 1];
+extern const int8_t g_aucLog2[MAX_CU_SIZE + 1];
 static inline int getLog2( int val )
 {
   CHECKD( g_aucLog2[2] != 1, "g_aucLog2[] has not been initialized yet." );
