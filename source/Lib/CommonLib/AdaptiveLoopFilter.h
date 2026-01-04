@@ -99,7 +99,7 @@ public:
   static constexpr int m_ALF_UNUSED_CLASSIDX     = 255;
   static constexpr int m_ALF_UNUSED_TRANSPOSIDX  = 255;
 
-  AdaptiveLoopFilter();
+  AdaptiveLoopFilter( bool enableOpt = true );
   virtual ~AdaptiveLoopFilter() {}
   void        reconstructCoeffAPSs    ( CodingStructure& cs, bool luma, bool chroma, bool isRdo);
   void        reconstructCoeffFixedAPSs(CodingStructure& cs, bool luma, bool chroma, bool isRdo);
@@ -141,11 +141,16 @@ public:
   void _initAdaptiveLoopFilterX86();
 #endif
 
+#if defined( TARGET_SIMD_ARM ) && ENABLE_SIMD_OPT_ALF
+  void initAdaptiveLoopFilterARM();
+  template<ARM_VEXT vext>
+  void _initAdaptiveLoopFilterARM();
+#endif
+
 protected:
   bool isCrossedByVirtualBoundaries( const CodingStructure& cs, const int xPos, const int yPos, const int width, const int height, bool& clipTop, bool& clipBottom, bool& clipLeft, bool& clipRight, int& numHorVirBndry, int& numVerVirBndry, int horVirBndryPos[], int verVirBndryPos[], int& rasterSliceAlfPad );
  
   static const int             m_classToFilterMapping[NUM_FIXED_FILTER_SETS][MAX_NUM_ALF_CLASSES];
-  static const int             m_fixedFilterSetCoeff[ALF_FIXED_FILTER_NUM][MAX_NUM_ALF_LUMA_COEFF];
   short                        m_fixedFilterSetCoeffDec[NUM_FIXED_FILTER_SETS][MAX_NUM_ALF_CLASSES * MAX_NUM_ALF_LUMA_COEFF];
   short                        m_coeffApsLuma[ALF_CTB_MAX_NUM_APS][MAX_NUM_ALF_LUMA_COEFF * MAX_NUM_ALF_CLASSES];
   short                        m_clippApsLuma[ALF_CTB_MAX_NUM_APS][MAX_NUM_ALF_LUMA_COEFF * MAX_NUM_ALF_CLASSES];
@@ -186,6 +191,8 @@ public :
   static constexpr int   m_scaleBits = 7; // 8-bits
   CcAlfFilterParam       m_ccAlfFilterParam;
   uint8_t*               m_ccAlfFilterControl[2];
+
+  static const int       m_fixedFilterSetCoeff[ALF_FIXED_FILTER_NUM][MAX_NUM_ALF_LUMA_COEFF];
 
 };
 
