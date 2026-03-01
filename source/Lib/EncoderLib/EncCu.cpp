@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2025, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2026, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -1864,7 +1864,7 @@ void EncCu::xCheckRDCostUnifiedMerge( CodingStructure *&tempCS, CodingStructure 
     addCiipCandsToPruningList( mergeCtx, localUnitArea, sqrtLambdaForFirstPass, ctxStart, distParam, *cu, sameMV );
   }
 
-  if( sps.MMVD && !( m_pcEncCfg->m_useFastMrg >= 2 && m_mergeItemList.size() <= 1 ) )
+  if( sps.MMVD && !!m_mergeItemList.size() && !( m_pcEncCfg->m_useFastMrg >= 2 && m_mergeItemList.size() <= 1 ) )
   {
     addMmvdCandsToPruningList( mergeCtx, localUnitArea, sqrtLambdaForFirstPass, ctxStart, distParam, *cu );
   }
@@ -2185,7 +2185,7 @@ void EncCu::addRegularCandsToPruningList( const MergeCtx &mergeCtx, const UnitAr
 
     pu.interDir             = mergeCtx.interDirNeighbours[uiMergeCand];
     pu.BcwIdx               = pu.interDir == 3 ? mergeCtx.BcwIdx[uiMergeCand] : BCW_DEFAULT;
-    pu.imv                  = mergeCtx.useAltHpelIf[uiMergeCand] ? IMV_HPEL : 0;
+    pu.imv                  = mergeCtx.useAltHpelIf[uiMergeCand] ? IMV_HPEL : IMV_OFF;
     CU::spanMotionInfo      ( pu );
 
     MergeItem *regularMerge = m_mergeItemList.allocateNewMergeItem();
@@ -2235,7 +2235,7 @@ void EncCu::addCiipCandsToPruningList( const MergeCtx &mergeCtx, const UnitArea 
 
     pu.interDir               = mergeCtx.interDirNeighbours[uiMergeCand];
     pu.BcwIdx                 = pu.interDir == 3 ? mergeCtx.BcwIdx[uiMergeCand] : BCW_DEFAULT;
-    pu.imv                    = mergeCtx.useAltHpelIf[uiMergeCand] ? IMV_HPEL : 0;
+    pu.imv                    = mergeCtx.useAltHpelIf[uiMergeCand] ? IMV_HPEL : IMV_OFF;
     CU::spanMotionInfo        ( pu );
 
     MergeItem* ciipMerge      = m_mergeItemList.allocateNewMergeItem();
@@ -2338,7 +2338,7 @@ void EncCu::addMmvdCandsToPruningList( const MergeCtx &mergeCtx, const UnitArea 
 
     pu.interDir               = mergeCtx.interDirNeighbours[mmvdIdx.pos.baseIdx];
     pu.BcwIdx                 = pu.interDir == 3 ? mergeCtx.BcwIdx[mmvdIdx.pos.baseIdx] : BCW_DEFAULT;
-    pu.imv                    = mergeCtx.useAltHpelIf[mmvdIdx.pos.baseIdx] ? IMV_HPEL : 0;
+    pu.imv                    = mergeCtx.useAltHpelIf[mmvdIdx.pos.baseIdx] ? IMV_HPEL : IMV_OFF;
     CU::spanMotionInfo        ( pu );
 
     MergeItem *mmvdMerge      = m_mergeItemList.allocateNewMergeItem();
@@ -2372,7 +2372,7 @@ void EncCu::addAffineCandsToPruningList( AffineMergeCtx &affineMergeCtx, const U
 
   pu.mergeFlag = true;
   pu.affine    = true;
-  pu.imv       = 0;
+  pu.imv       = IMV_OFF;
   pu.geo       = pu.mmvdMergeFlag = pu.mmvdSkip
                = pu.ciip
                = false;
@@ -2455,7 +2455,7 @@ void EncCu::addGpmCandsToPruningList( const MergeCtx &mergeCtx, const UnitArea &
   pu.mergeType = MRG_TYPE_DEFAULT_N;
   pu.BcwIdx    = BCW_DEFAULT;
   pu.interDir  = 3;
-  pu.imv       = 0;
+  pu.imv       = IMV_OFF;
   pu.affine    = pu.mmvdMergeFlag = pu.mmvdSkip
                = pu.ciip
                = false;
@@ -3024,7 +3024,7 @@ void EncCu::xCheckRDCostIBCMode(CodingStructure*& tempCS, CodingStructure*& best
   cu.chromaQpAdj = m_cuChromaQpOffsetIdxPlus1;
   cu.qp = encTestMode.qp;
   cu.initPuData();
-  cu.imv = 0;
+  cu.imv = IMV_OFF;
   cu.sbtInfo = 0;
   cu.mmvdSkip = false;
   cu.mmvdMergeFlag = false;
@@ -4305,7 +4305,7 @@ bool MergeItem::exportMergeInfo( CodingUnit &pu, bool forceNoResidual ) const
   pu.geo            = false;
   pu.mtsFlag        = false;
   pu.ciip           = false;
-  pu.imv            = ( !pu.geo && useAltHpelIf ) ? IMV_HPEL : 0;
+  pu.imv            = ( !pu.geo && useAltHpelIf ) ? IMV_HPEL : IMV_OFF;
   pu.mvRefine       = false;
 
   const bool resetCiip2Regular = mergeItemType == MergeItemType::CIIP && forceNoResidual;
@@ -4357,7 +4357,7 @@ bool MergeItem::exportMergeInfo( CodingUnit &pu, bool forceNoResidual ) const
     pu.geo      = true;
     pu.BcwIdx   = BCW_DEFAULT;
     updateGpmIdx( mergeIdx, pu.geoSplitDir, pu.geoMergeIdx );
-    pu.imv      = 0;
+    pu.imv      = IMV_OFF;
     break;
 
   case MergeItemType::IBC:

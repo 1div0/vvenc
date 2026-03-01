@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2025, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2026, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -233,7 +233,7 @@ void MergeCtx::setMergeInfo( CodingUnit& cu, int candIdx ) const
   cu.mergeFlag                  = true;
   cu.mmvdMergeFlag              = false;
   cu.interDir                   = interDirNeighbours[candIdx];
-  cu.imv                        = (!cu.geo && useAltHpelIf[candIdx]) ? IMV_HPEL : 0;
+  cu.imv                        = (!cu.geo && useAltHpelIf[candIdx]) ? IMV_HPEL : IMV_OFF;
   cu.mergeIdx                   = candIdx;
   cu.mergeType                  = mrgTypeNeighbours[candIdx];
   cu.mv     [REF_PIC_LIST_0][0] = mvFieldNeighbours[candIdx][0].mv;
@@ -248,7 +248,7 @@ void MergeCtx::setMergeInfo( CodingUnit& cu, int candIdx ) const
   cu.mvpNum [REF_PIC_LIST_1]    = NOT_VALID;
   if( CU::isIBC( cu ) )
   {
-    cu.imv                      = cu.imv == IMV_HPEL ? 0 : cu.imv;
+    cu.imv                      = cu.imv == IMV_HPEL ? IMV_OFF : cu.imv;
   }
   cu.BcwIdx                     = interDirNeighbours[candIdx] == 3 ? BcwIdx[candIdx] : BCW_DEFAULT;
   cu.mcControl                  = 0;
@@ -388,7 +388,7 @@ void MergeCtx::setMmvdMergeCandiInfo( CodingUnit &cu, const MmvdIdx candIdx ) co
   cu.mvpIdx[REF_PIC_LIST_1] = NOT_VALID;
   cu.mvpNum[REF_PIC_LIST_0] = NOT_VALID;
   cu.mvpNum[REF_PIC_LIST_1] = NOT_VALID;
-  cu.imv                    = mmvdUseAltHpelIf[mvdBaseIdx] ? IMV_HPEL : 0;
+  cu.imv                    = mmvdUseAltHpelIf[mvdBaseIdx] ? IMV_HPEL : IMV_OFF;
 
   cu.BcwIdx                 = interDirNeighbours[mvdBaseIdx] == 3 ? BcwIdx[mvdBaseIdx] : BCW_DEFAULT;
 

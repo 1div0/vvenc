@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2025, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2026, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -412,7 +412,7 @@ union MmvdIdx
 static constexpr int MAX_TU_LEVEL_CTX_CODED_BIN_CONSTRAINT =            28;
 
 static constexpr int BDOF_EXTEND_SIZE             =                     1;
-static constexpr int BDOF_TEMP_BUFFER_SIZE        =                     (MAX_CU_SIZE + 2 * BDOF_EXTEND_SIZE) * (MAX_CU_SIZE + 2 * BDOF_EXTEND_SIZE);
+static constexpr int BDOF_TEMP_BUFFER_SIZE        =                     (MAX_CU_SIZE + 2 * BDOF_EXTEND_SIZE) * (MAX_CU_SIZE + 2 * BDOF_EXTEND_SIZE) + 2; // add 2 to allow for SIMD overreads
 
 static constexpr int PROF_BORDER_EXT_W            =                     1;
 static constexpr int PROF_BORDER_EXT_H            =                     1;

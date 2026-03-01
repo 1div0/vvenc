@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2025, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2026, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -157,7 +157,7 @@ struct BlockingBarrier
     BlockingBarrier* nonconst = const_cast<BlockingBarrier*>(this);
 
     std::unique_lock<std::mutex> l( nonconst->m_lock );
-    nonconst->m_cond.wait( l, [=] { return !m_intBarrier.isBlocked(); } );
+    nonconst->m_cond.wait( l, [this] { return !m_intBarrier.isBlocked(); } );
   }
 
   BlockingBarrier()  = default;
@@ -210,7 +210,7 @@ struct WaitCounter
     WaitCounter* nonconst = const_cast<WaitCounter*>(this);
 
     std::unique_lock<std::mutex> l( nonconst->m_lock );
-    nonconst->m_cond.wait( l, [=] { return m_count == 0; } );
+    nonconst->m_cond.wait( l, [this] { return m_count == 0; } );
   }
 
   WaitCounter() = default;

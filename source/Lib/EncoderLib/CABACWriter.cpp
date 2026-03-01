@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2025, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2026, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -1974,7 +1974,7 @@ void CABACWriter::mvd_coding( const Mv &rMvd, int8_t imv )
     if (imv < IMV_HPEL)
     {
       shift = 2;
-      if (imv == IMV_4PEL)//IMV_4PEL
+      if (imv == IMV_4PEL)
       {
         shift = 4;
       }

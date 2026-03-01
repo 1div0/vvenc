@@ -10,10 +10,10 @@ if( NOT CMAKE_VERSION VERSION_LESS 3.13.0 )
 endif()
 
 # project name
-project( vvenc VERSION 1.13.1 )
+project( vvenc VERSION 1.15.0 )
 
 # set alternative version numbering for release candidates
-#set( PROJECT_VERSION_RC rc1 )
+set( PROJECT_VERSION_RC dev )
 if( PROJECT_VERSION_RC )
     set( PROJECT_VERSION "${PROJECT_VERSION}-${PROJECT_VERSION_RC}" )
 endif()
@@ -124,6 +124,14 @@ if( VVENC_TARGET_ARCH STREQUAL "AARCH64" )
     message( STATUS "AArch64 SVE2 intrinsics enabled" )
     add_compile_definitions( TARGET_SIMD_ARM_SVE2=1 )
   endif()
+
+  if( MSVC AND MSVC_VERSION GREATER_EQUAL 1950 )
+    message( WARNING "This version (>= 19.50) of the Microsoft ARM compiler was seen to produce"
+             " incorrect code in VVdeC with SIMD-Everywhere. Here the specific problematic functions"
+             " are implemented directly using NEON intrinsics (when VVENC_ENABLE_ARM_SIMD=1), which"
+             " seem to work fine, but if you experience further problems on ARM64 Windows, try using"
+             " an older toolset (<= v143)." )
+   endif()
 endif()
 
 if( VVENC_TARGET_ARCH STREQUAL "ARM" )
@@ -306,6 +314,9 @@ if( VVENC_ENABLE_WERROR )
   add_compile_options( "$<$<CXX_COMPILER_ID:GNU>:-Werror>" )
   add_compile_options( "$<$<CXX_COMPILER_ID:MSVC>:/WX>" )
 endif()
+
+# enable warnings for clang, that xcode enables by default
+add_compile_options( "$<$<CXX_COMPILER_ID:Clang>:-Wshorten-64-to-32>" )
 
 if( VVENC_ENABLE_X86_SIMD )
   if( ( UNIX OR MINGW ) AND VVENC_OPT_TARGET_ARCH )

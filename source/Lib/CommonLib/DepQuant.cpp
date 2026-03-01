@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2025, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2026, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -931,7 +931,7 @@ namespace DQIntern
 
       if( decision.absLevel )
       {
-        m_sbb.absLevels[scanInfo.insidePos] = ( uint8_t ) std::min<TCoeff>( 254 + ( decision.absLevel & 1 ), decision.absLevel );
+        m_sbb.absLevels[scanInfo.insidePos] = ( uint8_t ) std::min<TCoeff>( 126 + ( decision.absLevel & 1 ), decision.absLevel );
         
         if( scanInfo.currNbInfoSbb.numInv )
         {
@@ -1024,7 +1024,7 @@ namespace DQIntern
         ::memset( m_sbb.absLevels, 0, sizeof( m_sbb.absLevels ) );
       }
 
-      m_sbb.absLevels[ scanInfo.insidePos ] = (uint8_t)std::min<TCoeff>( 254 + ( decision.absLevel & 1 ), decision.absLevel );
+      m_sbb.absLevels[ scanInfo.insidePos ] = (uint8_t)std::min<TCoeff>( 126 + ( decision.absLevel & 1 ), decision.absLevel );
 
       m_commonCtx.update( scanInfo, prvState, *this );
 

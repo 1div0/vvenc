@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2025, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2026, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -467,8 +467,8 @@ void applyBlockCore( const CPelBuf& src, PelBuf& dst, const CompArea& blk, const
         }
       }
     }
-    variance <<= 2*(10-clpRng.bd);
-    diffsum <<= 2*(10-clpRng.bd);
+    variance *= (int64_t) 1 << (2*(10-clpRng.bd));
+    diffsum  *= (int64_t) 1 << (2*(10-clpRng.bd));
     const int cntV = w * h;
     const int cntD = 2 * cntV - w - h;
     vnoise[i] = ( int ) round( ( 15.0 * cntD / cntV * variance + 5.0 ) / ( diffsum + 5.0 ) );

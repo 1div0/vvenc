@@ -6,7 +6,7 @@ the Software are granted under this license.
 
 The Clear BSD License
 
-Copyright (c) 2019-2025, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
+Copyright (c) 2019-2026, Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. & The VVenC Authors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -54,6 +54,11 @@ POSSIBILITY OF SUCH DAMAGE.
 
 namespace vvenc
 {
+
+static inline uint16x8_t vvenc_vabaq_s16( uint16x8_t acc, int16x8_t x, int16x8_t y )
+{
+  return vreinterpretq_u16_s16( vabaq_s16( vreinterpretq_s16_u16( acc ), x, y ) );
+}
 
 static inline int16_t horizontal_add_s16x8( const int16x8_t a )
 {
