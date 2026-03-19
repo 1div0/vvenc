@@ -58,15 +58,18 @@ POSSIBILITY OF SUCH DAMAGE.
 
 #include "CommonLib/AdaptiveLoopFilter.h"
 #include "CommonLib/AffineGradientSearch.h"
+#include "CommonLib/CommonDef.h"
 #include "CommonLib/InterPrediction.h"
 #include "CommonLib/IntraPrediction.h"
 #include "CommonLib/MCTF.h"
 #include "CommonLib/RdCost.h"
+#include "CommonLib/SampleAdaptiveOffset.h"
 #include "CommonLib/TrQuant_EMT.h"
 #include "CommonLib/TypeDef.h"
 #include "CommonLib/Unit.h"
 
 #include "apputils/ParseArg.h"
+#include "vvenc/vvenc.h"
 
 using namespace vvenc;
 namespace po = apputils::program_options;
@@ -158,6 +161,28 @@ public:
 private:
   T m_min;
   T m_max;
+};
+
+template<typename T>
+class ConstantGenerator
+{
+public:
+  explicit ConstantGenerator( T val ) : val( val )
+  {
+  }
+
+  T operator()() const
+  {
+    return val;
+  }
+
+  std::string input_type() const
+  {
+    return "Constant";
+  }
+
+private:
+  T val;
 };
 
 template<typename T>
@@ -1172,7 +1197,7 @@ static bool check_padDmvr( InterPredInterpolation* ref, InterPredInterpolation* 
 
   for( unsigned i = 0; i < num_cases; ++i )
   {
-    unsigned srcStride = rng.get( width, 128 );
+    unsigned srcStride = rng.get( width + 8, 128 );
     unsigned dstStride = rng.get( width + 2 * padSize, 128 );
 
     if( !check_one_padDmvr( ref, opt, width, height, srcStride, dstStride, padSize, g ) )
@@ -1195,13 +1220,9 @@ static bool test_InterPred()
   unsigned num_cases = NUM_CASES;
   bool passed = true;
 
-  for( unsigned width = 8; width <= 16; width += 8 )
-  {
-    for( unsigned height = 8; height <= 16; height += 8 )
-    {
-      passed = check_biDirOptFlow( &ref, &opt, num_cases, width, height ) && passed;
-    }
-  }
+  passed = check_biDirOptFlow( &ref, &opt, num_cases, 8, 16 ) && passed;
+  passed = check_biDirOptFlow( &ref, &opt, num_cases, 16, 8 ) && passed;
+  passed = check_biDirOptFlow( &ref, &opt, num_cases, 16, 16 ) && passed;
 
   for( unsigned w : { 4, 8, 16, 32 } )
   {
@@ -1366,6 +1387,58 @@ static bool check_SAD( RdCost* ref, RdCost* opt, unsigned num_cases, int width, 
   return passed;
 }
 
+static bool check_SADX5( RdCost* ref, RdCost* opt, unsigned num_cases, int width, int height, bool isCalCentrePos )
+{
+  std::ostringstream sstm;
+  sstm << "RdCost::xGetSAD" << width << "X5"
+       << " w=" << width << " h=" << height << " isCalCentrePos=" << std::boolalpha << isCalCentrePos;
+  printf( "Testing %s\n", sstm.str().c_str() );
+
+  DimensionGenerator rng;
+  InputGenerator<Pel> g10{ 10, /*is_signed=*/false };
+
+  constexpr int kMargin = 4; // per-row horizontal margin (X5 kernel moves the ptr +/-4).
+
+  bool passed = true;
+  for( unsigned i = 0; i < num_cases; i++ )
+  {
+    // subShift is always 1 in real encodings (set in InterPrediction::xProcessDMVR).
+    constexpr int subShift = 1;
+    const int minStride = width + 2 * kMargin;
+    const int stride = rng.get( minStride, g_fastUnitTest ? 256 : 1024 );
+
+    std::vector<Pel> orgBuf( stride * height );
+    std::vector<Pel> curBuf( stride * height );
+
+    std::generate( orgBuf.begin(), orgBuf.end(), g10 );
+    std::generate( curBuf.begin(), curBuf.end(), g10 );
+
+    const Pel* orgPtr = orgBuf.data() + kMargin;
+    const Pel* curPtr = curBuf.data() + kMargin;
+
+    DistParam dtRef = ref->setDistParam( orgPtr, curPtr, stride, stride, /*bitDepth=*/10, COMP_Y, width, height,
+                                         subShift, /*isDMVR=*/true );
+    DistParam dtOpt = opt->setDistParam( orgPtr, curPtr, stride, stride, /*bitDepth=*/10, COMP_Y, width, height,
+                                         subShift, /*isDMVR=*/true );
+
+    std::array<Distortion, 5> costRef;
+    std::array<Distortion, 5> costOpt;
+
+    dtRef.dmvrSadX5( dtRef, costRef.data(), isCalCentrePos );
+    dtOpt.dmvrSadX5( dtOpt, costOpt.data(), isCalCentrePos );
+
+    for( int k = 0; k < 5; k++ )
+    {
+      if( !isCalCentrePos && k == 2 )
+      {
+        continue;
+      }
+      passed = compare_value( sstm.str(), costRef[k], costOpt[k] ) && passed;
+    }
+  }
+  return passed;
+}
+
 static bool check_HADs( RdCost* ref, RdCost* opt, unsigned num_cases, int width, int height, bool fast )
 {
   std::ostringstream sstm;
@@ -1517,6 +1590,17 @@ static bool test_RdCost()
       }
     }
   }
+
+  // Constraints based on DMVR::xProcessDMVR.
+  for( int h : { 8, 16 } )
+  {
+    for( int w : { 8, 16 } )
+    {
+      passed = check_SADX5( &ref, &opt, num_cases, w, h, /*isCalCentrePos=*/true ) && passed;
+      passed = check_SADX5( &ref, &opt, num_cases, w, h, /*isCalCentrePos=*/false ) && passed;
+    }
+  }
+
   return passed;
 }
 #endif // ENABLE_SIMD_OPT_DIST
@@ -2369,8 +2453,8 @@ static bool check_filterBlk( AdaptiveLoopFilter* ref, AdaptiveLoopFilter* opt, u
     for( unsigned i = 0; i < num_cases; ++i )
     {
       // Stride is often the width of a video frame, so use the width of 8K as an upper bound.
-      unsigned srcStride = rng.get( w, g_fastUnitTest ? 512 : 8192 );
-      unsigned dstStride = rng.get( w, g_fastUnitTest ? 512 : 8192 );
+      unsigned srcStride = rng.get( w + 8, g_fastUnitTest ? 512 : 8192 );
+      unsigned dstStride = rng.get( w    , g_fastUnitTest ? 512 : 8192 );
 
       if( !check_one_filterBlk( ref, opt, srcStride, dstStride, w, h, g, linearIndex ) )
       {
@@ -2400,6 +2484,90 @@ static bool test_AdaptiveLoopFilter()
   return passed;
 }
 #endif // ENABLE_SIMD_OPT_ALF
+
+#if ENABLE_SIMD_OPT_SAO
+
+template<typename G>
+static bool check_SAOcalcSaoStatisticsBo( SampleAdaptiveOffset* ref, SampleAdaptiveOffset* opt, int bd, G src_generator,
+                                          G org_generator )
+{
+  bool passed = true;
+  const unsigned blk_size = MAX_CU_SIZE * MAX_CU_SIZE;
+  const int srcStride = MAX_CU_SIZE;
+  const int orgStride = MAX_CU_SIZE;
+  std::vector<Pel> srcBlk( blk_size );
+  std::vector<Pel> orgBlk( blk_size );
+  std::vector<int64_t> countRef( NUM_SAO_BO_CLASSES );
+  std::vector<int64_t> diffRef( NUM_SAO_BO_CLASSES );
+  std::vector<int64_t> countOpt( NUM_SAO_BO_CLASSES );
+  std::vector<int64_t> diffOpt( NUM_SAO_BO_CLASSES );
+
+  std::ostringstream sstm_test;
+  sstm_test << "SampleAdaptiveOffset::calcSaoStatisticsBo " << bd << " bit";
+  std::cout << "Testing " << sstm_test.str() << '\n';
+
+  for( unsigned width : { 32, 64, 128 } )
+  {
+    for( unsigned height : { 32, 64, 128 } )
+    {
+      for( int skipLinesX : { 0, 3, 5 } )
+      {
+        for( int skipLinesY : { 0, 2, 4 } )
+        {
+          std::generate( srcBlk.begin(), srcBlk.end(), src_generator );
+          std::generate( orgBlk.begin(), orgBlk.end(), org_generator );
+
+          // endX is the same, or -3, or -5 of the width.
+          int endX = width - skipLinesX;
+          // endY is the same, or -2, or -4 of the height.
+          int endY = height - skipLinesY;
+
+          std::fill( countRef.begin(), countRef.end(), 0 );
+          std::fill( diffRef.begin(), diffRef.end(), 0 );
+          std::fill( countOpt.begin(), countOpt.end(), 0 );
+          std::fill( diffOpt.begin(), diffOpt.end(), 0 );
+
+          ref->calcSaoStatisticsBo( width, endX, endY, srcBlk.data(), orgBlk.data(), srcStride, orgStride, bd,
+                                    countRef.data(), diffRef.data() );
+          opt->calcSaoStatisticsBo( width, endX, endY, srcBlk.data(), orgBlk.data(), srcStride, orgStride, bd,
+                                    countOpt.data(), diffOpt.data() );
+
+          std::ostringstream sstm_subtest;
+          sstm_subtest << sstm_test.str() << " width=" << width << " endX=" << endX << " endY=" << endY;
+
+          passed =
+              compare_values_1d( sstm_subtest.str(), countRef.data(), countOpt.data(), NUM_SAO_BO_CLASSES ) && passed;
+          passed =
+              compare_values_1d( sstm_subtest.str(), diffRef.data(), diffOpt.data(), NUM_SAO_BO_CLASSES ) && passed;
+        }
+      }
+    }
+  }
+  return passed;
+}
+
+static bool test_SampleAdaptiveOffset()
+{
+  SampleAdaptiveOffset ref{ false };
+  SampleAdaptiveOffset opt{ true };
+
+  bool passed = true;
+
+  for( unsigned bd : { 8, 10 } )
+  {
+    ConstantGenerator<Pel> max_gen{ Pel( ( 1 << bd ) - 1 ) };
+    ConstantGenerator<Pel> min_gen{ 0 };
+    InputGenerator<Pel> rand_gen{ bd, /*is_signed=*/false };
+
+    passed = check_SAOcalcSaoStatisticsBo( &ref, &opt, bd, max_gen, min_gen ) && passed;
+    passed = check_SAOcalcSaoStatisticsBo( &ref, &opt, bd, min_gen, max_gen ) && passed;
+    passed = check_SAOcalcSaoStatisticsBo( &ref, &opt, bd, rand_gen, rand_gen ) && passed;
+  }
+
+  return passed;
+}
+
+#endif // ENABLE_SIMD_OPT_SAO
 
 struct UnitTestEntry
 {
@@ -2435,6 +2603,9 @@ static const UnitTestEntry test_suites[] = {
 #if ENABLE_SIMD_OPT_ALF
     { "ALF", test_AdaptiveLoopFilter },
 #endif
+#if ENABLE_SIMD_OPT_SAO
+    { "SAO", test_SampleAdaptiveOffset },
+#endif
 };
 
 struct UnitTestArgs
@@ -2442,6 +2613,7 @@ struct UnitTestArgs
   bool isFast = false;
   bool show_help = false;
   int seed;
+  std::string simd;
   std::string testcase;
 };
 
@@ -2472,7 +2644,8 @@ UnitTestArgs parse_args( int argc, char* argv[] )
     ( "help,h", args.show_help, "Show help", true )
     ( "seed", args.seed, "Set random seed for running tests" )
     ( "testcase,t", args.testcase, get_testcase_help_text(), false )
-    ( "fast", args.isFast, "Run a fast but less real-world accurate version of the tests", false );
+    ( "fast", args.isFast, "Run a fast but less real-world accurate version of the tests", false )
+    ( "SIMD", args.simd, "Test a specific SIMD extension.", false );
 
   po::SilentReporter err;
   po::scanArgv( opts, argc, ( const char** )argv, err );
@@ -2494,8 +2667,15 @@ int main( int argc, char* argv[] )
 {
   UnitTestArgs args = parse_args( argc, argv );
 
+  const char* simd = vvenc_set_SIMD_extension( args.simd.c_str() );
+  if( !simd )
+  {
+    std::cout << args.simd << " is not supported!\n\n";
+    exit( EXIT_FAILURE );
+  }
+
   srand( args.seed );
-  std::cout << "Running unit tests with seed=" << args.seed << ".\n\n";
+  std::cout << "Running unit tests with seed=" << args.seed << " SIMD=" << simd << ".\n\n";
 
   bool passed = true;
 
