@@ -88,6 +88,17 @@ void AffineGradientSearch::initAffineGradientSearchARM()
 }
 #endif
 
+#if ENABLE_SIMD_OPT_QUANT
+void DepQuant::initDepQuantARM()
+{
+  auto vext = read_arm_extension_flags();
+  if( vext >= NEON )
+  {
+    _initDepQuantARM<NEON>();
+  }
+}
+#endif // ENABLE_SIMD_OPT_QUANT
+
 #if ENABLE_SIMD_OPT_MCIF
 void InterpolationFilter::initInterpolationFilterARM()
 {
@@ -130,6 +141,12 @@ void RdCost::initRdCostARM()
     _initRdCostARM<SVE>();
   }
 #endif // TARGET_SIMD_ARM_SVE
+#if TARGET_SIMD_ARM_SVE2
+  if( vext >= SVE2 )
+  {
+    _initRdCostARM<SVE2>();
+  }
+#endif // TARGET_SIMD_ARM_SVE2
 }
 #endif
 

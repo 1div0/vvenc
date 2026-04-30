@@ -76,6 +76,12 @@ static inline int64x2_t vvenc_sdotq_lane_s16( int64x2_t acc, int16x8_t x, int16x
                                           svset_neonq_s16( svundef_s16(), y ), Lane ) );
 }
 
+static inline int16x8_t vvenc_svtbl_s16( int16x8_t data, uint16x8_t indices )
+{
+  return svget_neonq_s16(
+      svtbl_s16( svset_neonq_s16( svundef_s16(), data ), svset_neonq_u16( svundef_u16(), indices ) ) );
+}
+
 } // namespace vvenc
 
 #endif
